@@ -4,6 +4,7 @@ import { Search, UserX, UserCheck, Shield, Trash2, Plus, Edit, CheckSquare, Squa
 import { api, HttpError } from '@/lib/api';
 import { Card, Badge, Skeleton, ConfirmDialog } from '@/components/ui';
 import { formatJakarta } from '@/lib/format';
+import { useAuth } from '@/lib/auth';
 
 interface AdminUser {
   id: string; name: string; email: string; role: 'USER' | 'ADMIN'; status: string; emailVerifiedAt: string | null; lastLoginAt: string | null; createdAt: string;
@@ -13,6 +14,7 @@ const emptyForm: UserForm = { name: '', email: '', password: '', role: 'USER', s
 
 export function AdminUsersPage() {
   const qc = useQueryClient();
+  const { user: currentAdmin } = useAuth();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const limit = 20;
@@ -23,7 +25,8 @@ export function AdminUsersPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkDelete, setBulkDelete] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [bulkAction, setBulkAction] = useState<'suspend' | 'activate' | 'delete' | null>(null);
+  const [bulkAction, setBulkAction] = useState<'suspend' | 'activate' | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ deleted: number; requested: number } | null>(null);
 
   const list = useQuery({
     queryKey: ['admin', 'users', search, page],
@@ -43,15 +46,35 @@ export function AdminUsersPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin', 'users'] }); setDeleteId(null); setSelected((s) => { const n = new Set(s); n.forEach((v) => v === deleteId && n.delete(v)); return n; }); },
     onError: (e) => alert(e instanceof HttpError ? e.message : 'Gagal menghapus.'),
   });
+  const bulkDeleteMut = useMutation({
+    mutationFn: (ids: string[]) => api<{ deleted: number; requested: number }>('/admin/users/bulk-delete', { method: 'POST', body: { ids } }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setSelected(new Set());
+      setBulkDelete(false);
+      setBulkResult(res);
+    },
+    onError: (e) => {
+      setBulkDelete(false);
+      setBulkResult({ deleted: 0, requested: Array.from(selected).length });
+      alert(e instanceof HttpError ? e.message : 'Hapus massal gagal.');
+    },
+  });
   const bulkMut = useMutation({
     mutationFn: async () => {
       const ids = Array.from(selected);
-      for (const id of ids) {
-        if (bulkAction === 'delete') await api(`/admin/users/${id}`, { method: 'DELETE' });
-        else await api(`/admin/users/${id}`, { method: 'PATCH', body: { status: bulkAction === 'suspend' ? 'SUSPENDED' : 'ACTIVE' } });
-      }
+      const results = await Promise.allSettled(
+        ids.map((id) => api(`/admin/users/${id}`, { method: 'PATCH', body: { status: bulkAction === 'suspend' ? 'SUSPENDED' : 'ACTIVE' } }))
+      );
+      return { deleted: results.filter((r) => r.status === 'fulfilled').length, requested: ids.length };
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin', 'users'] }); setSelected(new Set()); setBulkAction(null); setBulkDelete(false); },
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['admin', 'users'] });
+      setSelected(new Set());
+      setBulkAction(null);
+      setBulkResult(res);
+    },
+    onError: (e) => alert(e instanceof HttpError ? e.message : 'Aksi gagal.'),
   });
 
   const items = list.data?.items ?? [];
@@ -60,9 +83,13 @@ export function AdminUsersPage() {
   const someSelected = useMemo(() => items.some((u) => selected.has(u.id)), [items, selected]);
   const toggleAll = () => {
     if (allSelected) setSelected(new Set());
-    else setSelected(new Set(items.map((u) => u.id)));
+    else {
+      const eligible = items.filter((u) => u.id !== currentAdmin?.id);
+      setSelected(new Set(eligible.map((u) => u.id)));
+    }
   };
   const toggleOne = (id: string) => {
+    if (id === currentAdmin?.id) return; // cannot select self
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
 
@@ -76,7 +103,7 @@ export function AdminUsersPage() {
               <span className="text-xs text-ink-muted self-center">{selected.size} dipilih</span>
               <button className="btn btn-secondary text-xs" onClick={() => setBulkAction('activate')}>Aktifkan</button>
               <button className="btn btn-secondary text-xs" onClick={() => setBulkAction('suspend')}>Tangguhkan</button>
-              <button className="btn btn-danger text-xs" onClick={() => setBulkDelete(true)}>Hapus</button>
+              <button className="btn btn-danger text-xs" disabled={bulkDeleteMut.isPending} onClick={() => setBulkDelete(true)}>{bulkDeleteMut.isPending ? 'Menghapus...' : 'Hapus'}</button>
               <button className="btn btn-ghost text-xs" onClick={() => setSelected(new Set())}>Batal pilih</button>
             </div>
           )}
@@ -209,16 +236,27 @@ export function AdminUsersPage() {
         confirmText={`Hapus ${selected.size}`}
         destructive
         onCancel={() => setBulkDelete(false)}
-        onConfirm={() => { setBulkAction('delete'); setBulkDelete(false); }}
+        onConfirm={() => { const ids = Array.from(selected).filter((id) => id !== currentAdmin?.id); if (ids.length) bulkDeleteMut.mutate(ids); else { setBulkDelete(false); alert('Tidak ada pengguna yang dapat dihapus.'); } }}
       />
       <ConfirmDialog
-        open={!!bulkAction && bulkAction !== 'delete'}
+        open={!!bulkAction && bulkAction !== null}
         title={`Konfirmasi aksi massal (${selected.size} pengguna)?`}
         message={`Aksi: ${bulkAction === 'suspend' ? 'Tangguhkan' : 'Aktifkan'}.`}
         confirmText="Lanjutkan"
         onCancel={() => setBulkAction(null)}
         onConfirm={() => { bulkMut.mutate(); }}
       />
+      {bulkResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <Card className="w-full max-w-sm">
+            <h3 className="text-lg font-semibold text-success mb-2">Berhasil</h3>
+            <p className="text-sm text-ink-muted mb-4">{bulkResult.deleted} dari {bulkResult.requested} pengguna berhasil dihapus.</p>
+            <div className="flex justify-end">
+              <button className="btn btn-primary" onClick={() => setBulkResult(null)}>Tutup</button>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

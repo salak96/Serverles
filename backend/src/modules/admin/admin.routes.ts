@@ -102,6 +102,64 @@ function expiredOrActive(now: Date) {
   };
 }
 
+// POST /api/v1/admin/users/bulk-delete
+router.post(
+  '/users/bulk-delete',
+  asyncHandler(async (req, res) => {
+    const body = z.object({ ids: z.array(z.string().min(1)).min(1).max(200) }).parse(req.body);
+    if (body.ids.includes(req.user!.id)) {
+      throw new BusinessError('Anda tidak dapat menghapus akun Anda sendiri.', 'SELF_DELETE_FORBIDDEN', 400);
+    }
+    const targets = await prisma.user.findMany({ where: { id: { in: body.ids } }, select: { id: true, role: true, email: true } });
+    if (!targets.length) throw new NotFoundError('Tidak ada pengguna yang cocok.');
+    const adminIds = targets.filter((t) => t.role === 'ADMIN').map((t) => t.id);
+    if (adminIds.length > 0) {
+      const otherAdmins = await prisma.user.count({ where: { role: 'ADMIN', id: { notIn: body.ids } } });
+      if (otherAdmins === 0) {
+        throw new BusinessError('Tidak dapat menghapus semua admin.', 'LAST_ADMIN', 400);
+      }
+    }
+    let deleted = 0;
+    for (const t of targets) {
+      try {
+        await prisma.$transaction([
+          prisma.licenseActivationAttempt.deleteMany({ where: { license: { userId: t.id } } }),
+          prisma.deviceReset.deleteMany({ where: { license: { userId: t.id } } }),
+          prisma.device.deleteMany({ where: { userId: t.id } }),
+          prisma.license.deleteMany({ where: { userId: t.id } }),
+          prisma.subscription.deleteMany({ where: { userId: t.id } }),
+          prisma.order.deleteMany({ where: { userId: t.id } }),
+          prisma.refreshToken.deleteMany({ where: { userId: t.id } }),
+          prisma.notification.deleteMany({ where: { userId: t.id } }),
+          prisma.emailVerificationToken.deleteMany({ where: { userId: t.id } }),
+          prisma.passwordResetToken.deleteMany({ where: { userId: t.id } }),
+          prisma.auditLog.deleteMany({ where: { actorUserId: t.id } }),
+          prisma.user.delete({ where: { id: t.id } }),
+        ]);
+        await recordAudit({
+          actorUserId: req.user!.id,
+          action: 'admin.user.delete',
+          entityType: 'User',
+          entityId: t.id,
+          result: 'SUCCESS',
+          metadata: { email: t.email, bulk: true },
+        });
+        deleted += 1;
+      } catch (e) {
+        await recordAudit({
+          actorUserId: req.user!.id,
+          action: 'admin.user.delete',
+          entityType: 'User',
+          entityId: t.id,
+          result: 'FAILURE',
+          metadata: { error: e instanceof Error ? e.message : 'unknown' },
+        });
+      }
+    }
+    res.json({ success: true, data: { deleted, requested: body.ids.length } });
+  })
+);
+
 // POST /api/v1/admin/users
 router.post(
   '/users',
