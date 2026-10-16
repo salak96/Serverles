@@ -1,0 +1,24 @@
+{
+  "name": "pawangtools",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PawangTools monorepo - membership portal & HWID license server",
+  "scripts": {
+    "dev": "concurrently --names \"backend,frontend\" -c \"cyan,magenta\" \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
+    "db:push": "npm --prefix backend exec prisma db push",
+    "db:seed": "npm --prefix backend run seed",
+    "db:studio": "npm --prefix backend exec prisma studio",
+    "test:backend": "npm --prefix backend test",
+    "test:frontend": "npm --prefix frontend test",
+    "test": "npm run test:backend && npm run test:frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}

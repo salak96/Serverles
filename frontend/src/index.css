@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { background-color: #0B0D12; color: #F5F5F5; }
+  ::selection { background: #FF8A00; color: #0B0D12; }
+}
+
+@layer components {
+  .card {
+    @apply bg-bg-card border border-line rounded-card p-5 shadow-soft;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary { @apply bg-accent text-bg hover:bg-accent-hover; }
+  .btn-secondary { @apply bg-bg-card border border-line text-ink hover:bg-line/40; }
+  .btn-ghost { @apply text-ink-muted hover:text-ink hover:bg-bg-card; }
+  .btn-danger { @apply bg-danger text-white hover:bg-red-600; }
+  .input {
+    @apply w-full bg-bg-sidebar border border-line rounded-lg px-3 py-2 text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition;
+  }
+  .label { @apply text-sm font-medium text-ink-muted mb-1.5 block; }
+  .badge { @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium; }
+  .badge-success { @apply bg-success/15 text-success; }
+  .badge-warning { @apply bg-warning/15 text-warning; }
+  .badge-danger { @apply bg-danger/15 text-danger; }
+  .badge-muted { @apply bg-line/60 text-ink-muted; }
+  .badge-accent { @apply bg-accent/15 text-accent; }
+  .skeleton { @apply animate-pulse bg-line/40 rounded; }
+}

@@ -1,0 +1,468 @@
+// PawangTools — Prisma schema
+// Stack: MySQL 8 + Prisma 5
+// Naming: snake_case for columns, camelCase for fields (Prisma default mapping)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================
+// Enums
+// =============================================================
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum LicenseStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  SUSPENDED
+  PENDING
+}
+
+enum DeviceStatus {
+  ACTIVE
+  UNBOUND
+}
+
+enum DeviceResetStatus {
+  PENDING
+  APPROVED
+  COMPLETED
+  REJECTED
+}
+
+enum NotificationCategory {
+  ACCOUNT
+  SUBSCRIPTION
+  LICENSE
+  DEVICE
+  PAYMENT
+  TOOL_UPDATE
+  SYSTEM
+}
+
+enum AuditResult {
+  SUCCESS
+  FAILURE
+  DENIED
+}
+
+// =============================================================
+// Users & auth
+// =============================================================
+
+model User {
+  id              String     @id @default(cuid())
+  name            String     @db.VarChar(120)
+  email           String     @unique @db.VarChar(191)
+  passwordHash    String     @db.VarChar(255)
+  role            UserRole   @default(USER)
+  status          UserStatus @default(PENDING_VERIFICATION)
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  refreshTokens           RefreshToken[]
+  subscriptions           Subscription[]
+  orders                  Order[]
+  licenses                License[]
+  notifications           Notification[]
+  auditLogs               AuditLog[]               @relation("AuditActor")
+  requestedDeviceResets   DeviceReset[]            @relation("ResetRequester")
+  approvedDeviceResets    DeviceReset[]            @relation("ResetApprover")
+
+  @@index([role])
+  @@index([status])
+  @@map("users")
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique @db.VarChar(255)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique @db.VarChar(255)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique @db.VarChar(255)
+  // Fingerprint of user agent + partial IP to reduce token theft via simple copy
+  userAgent String?   @db.VarChar(255)
+  ip        String?   @db.VarChar(64)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// =============================================================
+// Plans, subscriptions, orders
+// =============================================================
+
+model Plan {
+  id                 String   @id @default(cuid())
+  name               String   @db.VarChar(80)
+  slug               String   @unique @db.VarChar(80)
+  description        String?  @db.Text
+  price              Decimal  @db.Decimal(12, 2)
+  currency           String   @default("IDR") @db.VarChar(8)
+  durationDays       Int
+  maxDevices         Int      @default(1)
+  features           Json
+  // resetPolicy: { maxResets, periodDays, cooldownDays, requireAdmin, requireEmailVerification }
+  resetPolicy        Json
+  // availableDurations: array of { days, price, label } — supports multi-duration offers
+  availableDurations Json
+  isActive           Boolean  @default(true)
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  subscriptions Subscription[]
+  orders        Order[]
+  licenses      License[]
+  tools         Tool[]
+
+  @@index([isActive])
+  @@map("plans")
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  userId    String
+  planId    String
+  status    SubscriptionStatus @default(PENDING)
+  startsAt  DateTime
+  expiresAt DateTime
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan     Plan      @relation(fields: [planId], references: [id])
+  orders   Order[]
+  licenses License[]
+
+  @@index([userId])
+  @@index([planId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("subscriptions")
+}
+
+model Order {
+  id                String      @id @default(cuid())
+  userId            String
+  planId            String
+  subscriptionId    String?
+  amount            Decimal     @db.Decimal(12, 2)
+  currency          String      @default("IDR") @db.VarChar(8)
+  status            OrderStatus @default(PENDING)
+  provider          String      @default("manual") @db.VarChar(40)
+  providerReference String?     @db.VarChar(191)
+  durationDays      Int
+  metadata          Json?
+  paidAt            DateTime?
+  expiresAt         DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan         Plan           @relation(fields: [planId], references: [id])
+  subscription Subscription?  @relation(fields: [subscriptionId], references: [id])
+  events       PaymentEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([provider, providerReference])
+  @@map("orders")
+}
+
+model PaymentEvent {
+  id              String    @id @default(cuid())
+  orderId         String
+  provider        String    @db.VarChar(40)
+  providerEventId String    @db.VarChar(191)
+  status          String    @db.VarChar(40)
+  payload         Json
+  processedAt     DateTime?
+  result          String?   @db.VarChar(40)
+  errorMessage    String?   @db.Text
+  createdAt       DateTime  @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerEventId])
+  @@index([orderId])
+  @@map("payment_events")
+}
+
+// =============================================================
+// Licenses & devices
+// =============================================================
+
+model License {
+  id             String        @id @default(cuid())
+  userId         String
+  subscriptionId String?
+  planId         String
+  name           String?       @db.VarChar(120)
+  // SHA-256 hash of the license key (display only as masked)
+  keyHash        String        @unique @db.VarChar(255)
+  // Optional authenticated-encrypted copy of the key (if business requires display-after-issue)
+  keyEncrypted   String?       @db.Text
+  keyLastFour    String        @db.VarChar(8)
+  status         LicenseStatus @default(PENDING)
+  issuedAt       DateTime      @default(now())
+  startsAt       DateTime
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  revokeReason   String?       @db.VarChar(255)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription?              @relation(fields: [subscriptionId], references: [id])
+  plan         Plan                       @relation(fields: [planId], references: [id])
+  devices      Device[]
+  resets       DeviceReset[]
+  attempts     LicenseActivationAttempt[]
+
+  @@index([userId])
+  @@index([planId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("licenses")
+}
+
+model Device {
+  id         String       @id @default(cuid())
+  licenseId  String
+  userId     String
+  // HMAC-SHA-256 of HWID (server-side, never raw)
+  deviceHash String       @db.VarChar(255)
+  deviceName String?      @db.VarChar(120)
+  platform   String?      @db.VarChar(60)
+  appVersion String?      @db.VarChar(40)
+  status     DeviceStatus @default(ACTIVE)
+  boundAt    DateTime     @default(now())
+  lastSeenAt DateTime     @default(now())
+  unboundAt  DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  license License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+
+  @@unique([licenseId, deviceHash])
+  @@index([userId])
+  @@index([status])
+  @@index([lastSeenAt])
+  @@map("devices")
+}
+
+model DeviceReset {
+  id            String            @id @default(cuid())
+  licenseId     String
+  deviceId      String?
+  requestedById String
+  approvedById  String?
+  reason        String?           @db.VarChar(255)
+  status        DeviceResetStatus @default(PENDING)
+  createdAt     DateTime          @default(now())
+  approvedAt    DateTime?
+  completedAt   DateTime?
+
+  license     License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
+  requestedBy User    @relation("ResetRequester", fields: [requestedById], references: [id])
+  approvedBy  User?   @relation("ResetApprover", fields: [approvedById], references: [id])
+
+  @@index([licenseId])
+  @@index([requestedById])
+  @@index([status])
+  @@index([createdAt])
+  @@map("device_resets")
+}
+
+model LicenseActivationAttempt {
+  id         String   @id @default(cuid())
+  licenseId  String?
+  deviceHash String?  @db.VarChar(255)
+  result     String   @db.VarChar(40)
+  reasonCode String?  @db.VarChar(60)
+  ip         String?  @db.VarChar(64)
+  userAgent  String?  @db.VarChar(255)
+  createdAt  DateTime @default(now())
+
+  license License? @relation(fields: [licenseId], references: [id], onDelete: SetNull)
+
+  @@index([licenseId])
+  @@index([createdAt])
+  @@index([result])
+  @@map("license_activation_attempts")
+}
+
+// =============================================================
+// Tools & releases
+// =============================================================
+
+model Tool {
+  id             String   @id @default(cuid())
+  name           String   @db.VarChar(120)
+  slug           String   @unique @db.VarChar(120)
+  description    String?  @db.Text
+  category       String   @db.VarChar(60)
+  iconUrl        String?  @db.VarChar(255)
+  requiredPlanId String?
+  minAppVersion  String?  @db.VarChar(40)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  requiredPlan Plan?         @relation(fields: [requiredPlanId], references: [id])
+  releases     ToolRelease[]
+
+  @@index([category])
+  @@index([isActive])
+  @@map("tools")
+}
+
+model ToolRelease {
+  id             String   @id @default(cuid())
+  toolId         String
+  version        String   @db.VarChar(40)
+  releaseNotes   String?  @db.Text
+  // Storage key (object storage) or relative local path under STORAGE_LOCAL_DIR
+  fileStorageKey String   @db.VarChar(255)
+  fileSize       BigInt   @default(0)
+  sha256         String?  @db.VarChar(128)
+  releasedAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  tool Tool @relation(fields: [toolId], references: [id], onDelete: Cascade)
+
+  @@unique([toolId, version])
+  @@index([toolId])
+  @@map("tool_releases")
+}
+
+// =============================================================
+// Notifications
+// =============================================================
+
+model Notification {
+  id          String               @id @default(cuid())
+  // userId NULL = global announcement
+  userId      String?
+  title       String               @db.VarChar(180)
+  body        String               @db.Text
+  category    NotificationCategory
+  // Optional link target inside the frontend
+  link        String?              @db.VarChar(255)
+  publishedAt DateTime             @default(now())
+  readAt      DateTime?
+  createdAt   DateTime             @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([category])
+  @@index([publishedAt])
+  @@map("notifications")
+}
+
+// =============================================================
+// Audit & settings
+// =============================================================
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  actorUserId String?
+  action      String      @db.VarChar(80)
+  entityType  String      @db.VarChar(60)
+  entityId    String?     @db.VarChar(80)
+  result      AuditResult
+  // Never store secrets / passwords / full keys here
+  metadata    Json?
+  ip          String?     @db.VarChar(64)
+  userAgent   String?     @db.VarChar(255)
+  createdAt   DateTime    @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique @db.VarChar(80)
+  value     Json
+  updatedBy String?  @db.VarChar(80)
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
