@@ -16,14 +16,14 @@ function mockFetchOnce(status: number, body: string, contentType = 'application/
    
   globalThis.fetch = vi.fn(async () => {
     return new Response(body, { status, headers: { 'Content-Type': contentType } });
-  }) as any;
+  }) as unknown as typeof globalThis.fetch;
 }
 
 function mockFetchRejects(reason: unknown): void {
    
   globalThis.fetch = vi.fn(async () => {
     throw reason;
-  }) as any;
+  }) as unknown as typeof globalThis.fetch;
 }
 
 describe('api() error envelope handling', () => {

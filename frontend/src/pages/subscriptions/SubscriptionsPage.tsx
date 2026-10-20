@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check } from 'lucide-react';
 import { api, HttpError } from '@/lib/api';
 import { Card, Badge, EmptyState, Skeleton } from '@/components/ui';
-import { formatRupiah, formatJakarta } from '@/lib/format';
+import { formatJakarta } from '@/lib/format';
 import type { Plan } from '@/types';
 
 interface OrderPreview {

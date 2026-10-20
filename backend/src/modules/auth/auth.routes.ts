@@ -1,6 +1,5 @@
 import { Router, type Request, type Response } from 'express';
 import argon2 from 'argon2';
-import { z } from 'zod';
 import { prisma } from '../../config/prisma';
 import { env } from '../../config/env';
 import { asyncHandler } from '../../middleware/errorHandler';

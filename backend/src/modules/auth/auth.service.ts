@@ -3,7 +3,7 @@ import argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import { env } from '../../config/env';
 import { prisma } from '../../config/prisma';
-import { BusinessError, ConflictError, UnauthorizedError, ValidationError } from '../../utils/errors';
+import { BusinessError, ConflictError, UnauthorizedError } from '../../utils/errors';
 
 export const ACCESS_TOKEN_TTL = '15m';
 export const REFRESH_TOKEN_DAYS = 30;

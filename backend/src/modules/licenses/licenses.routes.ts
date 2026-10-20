@@ -4,22 +4,14 @@ import { asyncHandler } from '../../middleware/errorHandler';
 import { requireAuth } from '../../middleware/auth';
 import { makeLimiter } from '../../middleware/rateLimit';
 import { NotFoundError, ValidationError, BusinessError } from '../../utils/errors';
-import { formatJakarta } from '../../utils/date';
-import { maskLicenseKey, sha256OfKey } from '../../utils/crypto';
-import {
-  issueLicense,
-  revealKeyIfPossible,
-  rotateKey,
-  revokeLicense,
-  extendLicense,
-} from './licenses.service';
+import { sha256OfKey } from '../../utils/crypto';
+import { revealKeyIfPossible, rotateKey } from './licenses.service';
 import { activateDeviceAtomic, resetDevice, unbindDevice } from './devices.service';
 import {
   activateDeviceSchema,
   resetDeviceSchema,
   validateLicenseSchema,
 } from './licenses.schema';
-import { recordAudit } from '../../services/audit.service';
 import { notify } from '../../services/notification.service';
 
 const router = Router();
