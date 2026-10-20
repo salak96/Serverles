@@ -6,6 +6,7 @@ import { prisma } from '../config/prisma';
 type SessionUser = NonNullable<Request['user']>;
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       user?: {

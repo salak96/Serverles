@@ -13,14 +13,14 @@ afterEach(() => {
 });
 
 function mockFetchOnce(status: number, body: string, contentType = 'application/json'): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   globalThis.fetch = vi.fn(async () => {
     return new Response(body, { status, headers: { 'Content-Type': contentType } });
   }) as any;
 }
 
 function mockFetchRejects(reason: unknown): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   globalThis.fetch = vi.fn(async () => {
     throw reason;
   }) as any;
