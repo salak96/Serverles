@@ -5,9 +5,9 @@ export default {
     extend: {
       colors: {
         bg: { DEFAULT: '#0B0D12', sidebar: '#10131A', card: '#151922' },
-        line: { DEFAULT: '#272C36' },
-        accent: { DEFAULT: '#FF8A00', hover: '#FF6A00' },
-        ink: { DEFAULT: '#F5F5F5', muted: '#9CA3AF' },
+        line: { DEFAULT: '#2A303C' },
+        accent: { DEFAULT: '#FF8A00', hover: '#FFA126' },
+        ink: { DEFAULT: '#F8FAFC', muted: '#94A3B8' },
         success: '#10B981',
         warning: '#F59E0B',
         danger: '#EF4444',

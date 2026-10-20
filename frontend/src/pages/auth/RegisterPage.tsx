@@ -1,36 +1,56 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import clsx from 'clsx';
 import { api, HttpError, NetworkError } from '@/lib/api';
-import { AuthShell } from './LoginPage';
-import { Mail, UserPlus, Eye, EyeOff } from 'lucide-react';
+import { Check, Circle, Mail, UserPlus } from 'lucide-react';
 import { PolicyModal } from '@/components/ui';
 import { termsOfServiceContent, privacyPolicyContent } from './policies';
+import { AuthFooter, AuthShell, FormAlert, FormError, FormInput, PasswordInput, PrimaryButton, StatusIcon } from './AuthComponents';
 
 const schema = z.object({
-  name: z.string().min(2, 'Nama minimal 2 karakter.').max(120),
-  email: z.string().email('Format email tidak valid.'),
-  password: z.string().min(8, 'Password minimal 8 karakter.'),
-  confirmPassword: z.string(),
+  name: z.string().trim().min(2, 'Nama minimal 2 karakter.').max(120, 'Nama maksimal 120 karakter.'),
+  email: z.string().trim().email('Format email tidak valid.').max(191, 'Email terlalu panjang.'),
+  password: z.string().min(8, 'Password minimal 8 karakter.').max(128, 'Password maksimal 128 karakter.'),
+  confirmPassword: z.string().min(1, 'Konfirmasi password wajib diisi.'),
   acceptTerms: z.literal(true, { errorMap: () => ({ message: 'Anda harus menyetujui syarat layanan.' }) }),
 }).refine((d) => d.password === d.confirmPassword, {
   message: 'Konfirmasi password tidak cocok.', path: ['confirmPassword'],
 });
 type FormData = z.infer<typeof schema>;
 
+function PasswordRequirements({ password }: { password: string }) {
+  const rules = [
+    { label: 'Minimal 8 karakter (wajib)', met: password.length >= 8 },
+    { label: 'Huruf besar & kecil (disarankan)', met: /[a-z]/.test(password) && /[A-Z]/.test(password) },
+    { label: 'Angka atau simbol (disarankan)', met: /[\d\W_]/.test(password) },
+  ];
+  return (
+    <ul className="grid gap-1.5 text-xs" aria-label="Persyaratan password">
+      {rules.map((r) => (
+        <li key={r.label} className={clsx('flex items-center gap-2 transition-colors', r.met ? 'text-success' : 'text-ink-muted')}>
+          {r.met ? <Check className="w-3.5 h-3.5 shrink-0" aria-hidden="true" /> : <Circle className="w-3 h-3 shrink-0 mx-px" aria-hidden="true" />}
+          <span>{r.label}</span>
+          <span className="sr-only">{r.met ? 'terpenuhi' : 'belum terpenuhi'}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function RegisterPage() {
   const navigate = useNavigate();
-  const { register, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, setError, control, formState: { errors, isSubmitting, touchedFields, isSubmitted } } = useForm<FormData>({
     resolver: zodResolver(schema),
+    mode: 'onTouched',
     defaultValues: { acceptTerms: false as unknown as true },
   });
+  const [password = '', confirmPassword = ''] = useWatch({ control, name: ['password', 'confirmPassword'] });
   const [serverError, setServerError] = useState<string | null>(null);
   const [emailInfo, setEmailInfo] = useState<{ configured: boolean; delivered: boolean; reason?: string } | null>(null);
   const [openModal, setOpenModal] = useState<'tos' | 'privacy' | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
 
   const onSubmit = async (data: FormData): Promise<void> => {
     setServerError(null);
@@ -51,7 +71,6 @@ export function RegisterPage() {
         setServerError(translateRegisterError(e));
         return;
       }
-      // Anything else (e.g. unexpected runtime error in the client).
       setServerError('Terjadi kesalahan tak terduga. Coba lagi.');
     }
   };
@@ -75,7 +94,6 @@ export function RegisterPage() {
       // Zod flatten output: { fieldErrors: { name?: string[], email?: string[], ... }, formErrors: string[] }
       const d = err.details as { fieldErrors?: Record<string, string[]>; formErrors?: string[] };
       const fieldErrors = d.fieldErrors ?? {};
-      // Map each field error to the form.
       (['name', 'email', 'password', 'confirmPassword', 'acceptTerms'] as const).forEach((f) => {
         const msgs = fieldErrors[f];
         if (msgs && msgs.length > 0) {
@@ -90,125 +108,109 @@ export function RegisterPage() {
 
   if (emailInfo) {
     return (
-      <AuthShell title="Periksa email Anda" subtitle="Kami telah mengirim tautan verifikasi.">
-        <div className="text-center space-y-4">
-          <div className="w-12 h-12 mx-auto rounded-full bg-accent/20 text-accent flex items-center justify-center">
-            <Mail className="w-6 h-6" />
-          </div>
-          <p className="text-ink-muted text-sm">
-            Jika email terlihat valid, tautan verifikasi akan dikirim. Tautan berlaku 24 jam.
+      <AuthShell title="Periksa email Anda" subtitle="Satu langkah lagi untuk mengaktifkan akun Anda.">
+        <div className="text-center space-y-5">
+          <StatusIcon><Mail className="w-6 h-6" /></StatusIcon>
+          <p className="text-ink-muted text-sm leading-relaxed">
+            Jika alamat email valid, tautan verifikasi akan dikirim. Tautan berlaku selama 24 jam.
           </p>
           {!emailInfo.delivered && (
-            <div className="bg-warning/10 border border-warning/30 text-warning text-xs rounded-lg px-3 py-2 text-left">
+            <FormAlert variant="warning">
               {emailInfo.configured
                 ? 'Pengiriman email gagal. Periksa konfigurasi SMTP server atau hubungi administrator. Jangan menganggap email verifikasi sudah terkirim.'
                 : 'Pengiriman email belum dikonfigurasi (SMTP). Dalam mode pengembangan, tautan verifikasi dicatat ke log server. Pada produksi, hubungi admin untuk mengaktifkan SMTP.'}
-            </div>
+            </FormAlert>
           )}
-          <button className="btn btn-secondary w-full" onClick={() => navigate('/auth/login')}>Kembali ke halaman masuk</button>
+          <button type="button" className="btn btn-secondary w-full h-12 rounded-[10px]" onClick={() => navigate('/auth/login')}>Kembali ke Login</button>
         </div>
       </AuthShell>
     );
   }
 
+  const confirmMatches = confirmPassword.length > 0 && confirmPassword === password;
+  // Zod skips refine() while other fields are invalid, so surface the mismatch directly.
+  const confirmError = errors.confirmPassword?.message
+    ?? ((touchedFields.confirmPassword || isSubmitted) && confirmPassword.length > 0 && !confirmMatches ? 'Konfirmasi password tidak cocok.' : undefined);
+
   return (
-    <AuthShell title="Daftar akun PawangTools" subtitle="Mulai kelola langganan dan lisensi Anda.">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+    <AuthShell title="Buat Akun" subtitle="Daftar untuk mulai menggunakan layanan PawangTools.">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+        <FormInput
+          label="Nama lengkap"
+          placeholder="Nama sesuai identitas Anda"
+          autoComplete="name"
+          error={errors.name?.message}
+          {...register('name')}
+        />
+        <FormInput
+          label="Email"
+          type="email"
+          inputMode="email"
+          placeholder="nama@email.com"
+          autoComplete="email"
+          error={errors.email?.message}
+          {...register('email')}
+        />
+        <PasswordInput
+          label="Password"
+          placeholder="Minimal 8 karakter"
+          autoComplete="new-password"
+          error={errors.password?.message}
+          hint={<PasswordRequirements password={password} />}
+          {...register('password', { deps: confirmPassword ? ['confirmPassword'] : [] })}
+        />
+        <PasswordInput
+          label="Konfirmasi password"
+          placeholder="Ulangi password"
+          autoComplete="new-password"
+          error={confirmError}
+          hint={confirmMatches && !confirmError
+            ? <p className="flex items-center gap-1.5 text-xs text-success"><Check className="w-3.5 h-3.5" aria-hidden="true" /> Password cocok</p>
+            : undefined}
+          {...register('confirmPassword')}
+        />
+
         <div>
-          <label className="label">Nama lengkap</label>
-          <input className="input" autoComplete="name" {...register('name')} />
-          {errors.name && <p className="text-xs text-danger mt-1">{errors.name.message}</p>}
-        </div>
-        <div>
-          <label className="label">Email</label>
-          <input className="input" type="email" autoComplete="email" {...register('email')} />
-          {errors.email && <p className="text-xs text-danger mt-1">{errors.email.message}</p>}
-        </div>
-        <div>
-          <label className="label">Password</label>
-          <div className="relative">
+          <div className="flex items-start gap-3">
             <input
-              className="input pr-10"
-              type={showPassword ? 'text' : 'password'}
-              autoComplete="new-password"
-              {...register('password')}
+              id="accept-terms"
+              type="checkbox"
+              className="mt-0.5 w-[18px] h-[18px] shrink-0 rounded border-line bg-bg-sidebar accent-[#FF8A00] cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-card"
+              aria-required="true"
+              aria-invalid={errors.acceptTerms ? 'true' : 'false'}
+              aria-describedby={errors.acceptTerms ? 'accept-terms-error' : undefined}
+              {...register('acceptTerms')}
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink p-1"
-              aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
-            >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
+            <label htmlFor="accept-terms" className="text-sm leading-relaxed text-ink-muted cursor-pointer select-none">
+              Saya menyetujui{' '}
+              <button
+                type="button"
+                onClick={() => setOpenModal('tos')}
+                className="font-medium text-accent hover:text-accent-hover hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+              >
+                Syarat &amp; Ketentuan
+              </button>{' '}
+              serta{' '}
+              <button
+                type="button"
+                onClick={() => setOpenModal('privacy')}
+                className="font-medium text-accent hover:text-accent-hover hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
+              >
+                Kebijakan Privasi
+              </button>{' '}
+              PawangTools.
+            </label>
           </div>
-          {errors.password && <p className="text-xs text-danger mt-1">{errors.password.message}</p>}
-          <p className="text-[11px] text-ink-muted mt-1">Minimal 8 karakter, mengandung huruf besar, kecil, dan angka.</p>
+          {errors.acceptTerms && <FormError id="accept-terms-error">{errors.acceptTerms.message as string}</FormError>}
         </div>
-        <div>
-          <label className="label">Konfirmasi password</label>
-          <div className="relative">
-            <input
-              className="input pr-10"
-              type={showConfirm ? 'text' : 'password'}
-              autoComplete="new-password"
-              {...register('confirmPassword')}
-            />
-            <button
-              type="button"
-              onClick={() => setShowConfirm((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink p-1"
-              aria-label={showConfirm ? 'Sembunyikan konfirmasi password' : 'Tampilkan konfirmasi password'}
-            >
-              {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
-          {errors.confirmPassword && <p className="text-xs text-danger mt-1">{errors.confirmPassword.message}</p>}
+
+        {serverError && <FormAlert>{serverError}</FormAlert>}
+        <div className="pt-1">
+          <PrimaryButton loading={isSubmitting} loadingText="Membuat akun...">
+            <UserPlus className="w-[18px] h-[18px]" aria-hidden="true" /> Buat Akun
+          </PrimaryButton>
         </div>
-        <div className="flex items-start gap-2 text-sm text-ink-muted">
-          <input
-            id="accept-terms"
-            type="checkbox"
-            className="mt-1 shrink-0"
-            aria-required="true"
-            aria-invalid={errors.acceptTerms ? 'true' : 'false'}
-            aria-describedby={errors.acceptTerms ? 'accept-terms-error' : undefined}
-            {...register('acceptTerms')}
-          />
-          <label htmlFor="accept-terms" className="leading-relaxed cursor-pointer select-none">
-            Saya menyetujui{' '}
-            <button
-              type="button"
-              onClick={() => setOpenModal('tos')}
-              className="text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-accent rounded"
-            >
-              Syarat &amp; Ketentuan Layanan
-            </button>{' '}
-            dan{' '}
-            <button
-              type="button"
-              onClick={() => setOpenModal('privacy')}
-              className="text-accent hover:underline focus:outline-none focus:ring-2 focus:ring-accent rounded"
-            >
-              Kebijakan Privasi
-            </button>{' '}
-            PawangTools.
-          </label>
-        </div>
-        {errors.acceptTerms && (
-          <p id="accept-terms-error" role="alert" className="text-xs text-danger">
-            {errors.acceptTerms.message as string}
-          </p>
-        )}
-        {serverError && (
-          <div className="bg-danger/10 border border-danger/30 text-danger text-sm rounded-lg px-3 py-2">{serverError}</div>
-        )}
-        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting}>
-          {isSubmitting ? 'Membuat akun...' : <><UserPlus className="w-4 h-4" /> Daftar</>}
-        </button>
-        <p className="text-center text-sm text-ink-muted">
-          Sudah punya akun? <Link to="/auth/login" className="text-accent hover:underline">Masuk</Link>
-        </p>
+        <AuthFooter text="Sudah punya akun?" linkText="Masuk" to="/auth/login" />
       </form>
 
       <PolicyModal

@@ -4,11 +4,12 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { api, HttpError } from '@/lib/api';
-import { AuthShell } from './LoginPage';
+import { KeyRound } from 'lucide-react';
+import { AuthShell, FormAlert, PasswordInput, PrimaryButton } from './AuthComponents';
 
 const schema = z.object({
-  password: z.string().min(8, 'Password minimal 8 karakter.'),
-  confirmPassword: z.string(),
+  password: z.string().min(8, 'Password minimal 8 karakter.').max(128, 'Password maksimal 128 karakter.'),
+  confirmPassword: z.string().min(1, 'Konfirmasi password wajib diisi.'),
 }).refine((d) => d.password === d.confirmPassword, {
   message: 'Konfirmasi password tidak cocok.', path: ['confirmPassword'],
 });
@@ -18,7 +19,7 @@ export function ResetPasswordPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const token = params.get('token') ?? '';
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({ resolver: zodResolver(schema) });
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({ resolver: zodResolver(schema), mode: 'onTouched' });
   const [serverError, setServerError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
@@ -35,9 +36,8 @@ export function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <AuthShell title="Tautan tidak valid">
-        <p className="text-ink-muted text-sm mb-4">Tautan reset tidak lengkap. Minta tautan baru dari halaman lupa password.</p>
-        <Link to="/auth/forgot-password" className="btn btn-secondary w-full">Minta tautan baru</Link>
+      <AuthShell title="Tautan tidak valid" subtitle="Tautan reset tidak lengkap. Minta tautan baru dari halaman lupa password.">
+        <Link to="/auth/forgot-password" className="btn btn-secondary w-full h-12 rounded-[10px]">Minta tautan baru</Link>
       </AuthShell>
     );
   }
@@ -45,28 +45,34 @@ export function ResetPasswordPage() {
   if (done) {
     return (
       <AuthShell title="Password diubah" subtitle="Anda akan diarahkan ke halaman masuk.">
-        <p className="text-success text-sm">Kata sandi berhasil direset. Mengalihkan...</p>
+        <FormAlert variant="success">Kata sandi berhasil direset. Mengalihkan...</FormAlert>
       </AuthShell>
     );
   }
 
   return (
     <AuthShell title="Atur ulang password" subtitle="Masukkan password baru untuk akun Anda.">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div>
-          <label className="label">Password baru</label>
-          <input className="input" type="password" autoComplete="new-password" {...register('password')} />
-          {errors.password && <p className="text-xs text-danger mt-1">{errors.password.message}</p>}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+        <PasswordInput
+          label="Password baru"
+          placeholder="Minimal 8 karakter"
+          autoComplete="new-password"
+          error={errors.password?.message}
+          {...register('password')}
+        />
+        <PasswordInput
+          label="Konfirmasi password"
+          placeholder="Ulangi password baru"
+          autoComplete="new-password"
+          error={errors.confirmPassword?.message}
+          {...register('confirmPassword')}
+        />
+        {serverError && <FormAlert>{serverError}</FormAlert>}
+        <div className="pt-1">
+          <PrimaryButton loading={isSubmitting} loadingText="Menyimpan...">
+            <KeyRound className="w-[18px] h-[18px]" aria-hidden="true" /> Simpan password baru
+          </PrimaryButton>
         </div>
-        <div>
-          <label className="label">Konfirmasi password</label>
-          <input className="input" type="password" autoComplete="new-password" {...register('confirmPassword')} />
-          {errors.confirmPassword && <p className="text-xs text-danger mt-1">{errors.confirmPassword.message}</p>}
-        </div>
-        {serverError && <div className="bg-danger/10 border border-danger/30 text-danger text-sm rounded-lg px-3 py-2">{serverError}</div>}
-        <button type="submit" className="btn btn-primary w-full" disabled={isSubmitting}>
-          {isSubmitting ? 'Menyimpan...' : 'Simpan password baru'}
-        </button>
       </form>
     </AuthShell>
   );

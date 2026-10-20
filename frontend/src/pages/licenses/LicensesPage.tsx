@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
-import { Key, Copy, RefreshCw, Eye, EyeOff, AlertTriangle, Check } from 'lucide-react';
+import { Key, Copy, RefreshCw, Eye, EyeOff, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { api, HttpError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, Badge, EmptyState, Skeleton, ConfirmDialog } from '@/components/ui';
 import { formatJakarta, daysBetween } from '@/lib/format';
 import type { License } from '@/types';
+
+type ToastState = { type: 'success' | 'error'; text: string } | null;
 
 export function LicensesPage() {
   const { id: paramId } = useParams();
@@ -14,7 +16,15 @@ export function LicensesPage() {
   const qc = useQueryClient();
   const [revealKey, setRevealKey] = useState<{ licenseId: string; key: string } | null>(null);
   const [rotateTarget, setRotateTarget] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [toast, setToast] = useState<ToastState>(null);
+  const [revealedKeys, setRevealedKeys] = useState<Record<string, string>>({});
+  const rememberKey = (licenseId: string, key: string): void => setRevealedKeys((m) => ({ ...m, [licenseId]: key }));
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const licenses = useQuery({ queryKey: ['licenses', 'me'], queryFn: () => api<License[]>('/licenses/me') });
   const focused = paramId ? licenses.data?.find((l) => l.id === paramId) : null;
@@ -28,6 +38,7 @@ export function LicensesPage() {
     mutationFn: (id: string) => api<{ licenseKey: string; keyMasked: string }>(`/licenses/${id}/rotate-key`, { method: 'POST' }),
     onSuccess: (res, id) => {
       setRevealKey({ licenseId: id, key: res.licenseKey });
+      rememberKey(id, res.licenseKey);
       qc.invalidateQueries({ queryKey: ['licenses'] });
       setToast({ type: 'success', text: 'API key berhasil dirotasi. Salin dan simpan di tempat aman.' });
       setRotateTarget(null);
@@ -51,7 +62,9 @@ export function LicensesPage() {
             <Info label="Masa aktif" value={formatJakarta(focused.expiresAt)} />
             <Info label="Sisa hari" value={`${daysBetween(new Date().toISOString(), focused.expiresAt)} hari`} />
             <Info label="Perangkat" value={`${focused.activeDevices}/${focused.maxDevices}`} />
-            <Info label="API key" value={focused.keyMasked} mono />
+          </div>
+          <div className="mt-4">
+            <ApiKeyField licenseId={focused.id} masked={focused.keyMasked} revealed={revealedKeys[focused.id]} onRevealed={(k) => rememberKey(focused.id, k)} onToast={setToast} />
           </div>
           <div className="flex flex-wrap gap-2 mt-4">
             <button className="btn btn-primary" onClick={() => setRotateTarget(focused.id)}>
@@ -107,7 +120,7 @@ export function LicensesPage() {
               <p className="text-sm text-ink-muted mb-3">Simpan key ini di tempat aman. Anda tidak akan melihatnya lagi.</p>
               <div className="bg-bg-sidebar border border-line rounded-lg p-3 font-mono text-sm break-all flex items-center gap-2">
                 <span className="flex-1">{revealKey.key}</span>
-                <button className="btn btn-ghost p-1.5" onClick={() => copy(revealKey.key, setToast)} aria-label="Salin"><Copy className="w-4 h-4" /></button>
+                <button className="btn btn-ghost p-1.5" onClick={() => copyWithToast(revealKey.key, setToast)} aria-label="Salin"><Copy className="w-4 h-4" /></button>
               </div>
               <div className="flex gap-2 justify-end mt-4">
                 <button className="btn btn-primary" onClick={() => setRevealKey(null)}>Saya sudah menyimpan</button>
@@ -148,8 +161,8 @@ export function LicensesPage() {
                   <Info label="Berakhir" value={formatJakarta(l.expiresAt)} />
                   <Info label="Sisa" value={`${daysBetween(new Date().toISOString(), l.expiresAt)} hari`} />
                   <Info label="Perangkat" value={`${l.activeDevices}/${l.maxDevices}`} />
-                  <Info label="API key" value={l.keyMasked} mono />
                 </div>
+                <ApiKeyField licenseId={l.id} masked={l.keyMasked} revealed={revealedKeys[l.id]} onRevealed={(k) => rememberKey(l.id, k)} onToast={setToast} />
                 <div className="flex gap-2">
                   <Link to={`/licenses/${l.id}`} className="btn btn-primary flex-1">Kelola</Link>
                   <button className="btn btn-secondary" onClick={() => setRotateTarget(l.id)}>
@@ -189,6 +202,94 @@ function Info({ label, value, mono }: { label: string; value: string; mono?: boo
   );
 }
 
+function ApiKeyField({ licenseId, masked, revealed, onRevealed, onToast }: {
+  licenseId: string;
+  masked: string;
+  revealed?: string;
+  onRevealed: (key: string) => void;
+  onToast: (t: ToastState) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [unavailable, setUnavailable] = useState<string | null>(null);
+
+  const fetchKey = async (): Promise<string | null> => {
+    if (revealed) return revealed;
+    setLoading(true);
+    try {
+      const res = await api<{ available: boolean; licenseKey?: string; message?: string }>(`/licenses/${licenseId}/reveal-key`, { method: 'POST' });
+      if (res.available && res.licenseKey) {
+        onRevealed(res.licenseKey);
+        return res.licenseKey;
+      }
+      setUnavailable(res.message ?? 'API key tidak dapat ditampilkan ulang. Gunakan rotasi untuk membuat kunci baru.');
+      return null;
+    } catch (e) {
+      onToast({ type: 'error', text: e instanceof HttpError ? e.message : 'Gagal mengambil API key.' });
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleVisible = async (): Promise<void> => {
+    if (visible) { setVisible(false); return; }
+    if (await fetchKey()) setVisible(true);
+  };
+
+  const handleCopy = async (): Promise<void> => {
+    const key = await fetchKey();
+    if (!key) return;
+    if (await copyText(key)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      onToast({ type: 'success', text: 'API key disalin ke clipboard.' });
+    } else {
+      onToast({ type: 'error', text: 'Gagal menyalin. Tampilkan key lalu salin secara manual.' });
+    }
+  };
+
+  const shown = visible && revealed ? revealed : masked;
+
+  return (
+    <div>
+      <div className="text-[11px] text-ink-muted uppercase tracking-wide mb-1">API key</div>
+      <div className="flex items-center gap-1 bg-bg-sidebar border border-line rounded-lg pl-3 pr-1 py-1">
+        <code className={`flex-1 min-w-0 font-mono text-sm break-all py-1 ${visible ? 'select-all text-ink' : 'select-none text-ink-muted'}`} aria-live="polite">
+          {shown}
+        </code>
+        <button
+          type="button"
+          className="btn btn-ghost p-2 shrink-0"
+          onClick={toggleVisible}
+          disabled={loading}
+          aria-label={visible ? 'Sembunyikan API key' : 'Tampilkan API key'}
+          aria-pressed={visible}
+          title={visible ? 'Sembunyikan' : 'Tampilkan'}
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost p-2 shrink-0"
+          onClick={handleCopy}
+          disabled={loading}
+          aria-label="Salin API key"
+          title="Salin"
+        >
+          {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+        </button>
+      </div>
+      {unavailable && (
+        <p className="flex items-start gap-1.5 text-xs text-warning mt-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" /> {unavailable}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'muted' {
   if (s === 'ACTIVE') return 'success';
   if (s === 'PENDING') return 'warning';
@@ -196,14 +297,30 @@ function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'muted' {
   return 'danger';
 }
 
-function copy(text: string, setToast: (t: { type: 'success' | 'error'; text: string } | null) => void) {
-  navigator.clipboard.writeText(text).then(
-    () => setToast({ type: 'success', text: 'Disalin ke clipboard.' }),
-    () => setToast({ type: 'error', text: 'Gagal menyalin.' }),
-  );
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall back below
+  }
+  // Clipboard API is unavailable on non-HTTPS origins.
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  const ok = document.execCommand('copy');
+  ta.remove();
+  return ok;
 }
 
-void AlertTriangle;
-void Eye;
-void EyeOff;
-void Check;
+function copyWithToast(text: string, setToast: (t: ToastState) => void): void {
+  void copyText(text).then((ok) => setToast(ok
+    ? { type: 'success', text: 'Disalin ke clipboard.' }
+    : { type: 'error', text: 'Gagal menyalin.' }));
+}

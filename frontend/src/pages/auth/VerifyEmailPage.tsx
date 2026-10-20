@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, HttpError } from '@/lib/api';
-import { AuthShell } from './LoginPage';
+import { AuthShell } from './AuthComponents';
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 export function VerifyEmailPage() {
