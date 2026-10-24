@@ -1,6 +1,7 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
 import { ZodError } from 'zod';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import multer from 'multer';
 import { AppError } from '../utils/errors';
 import { logger } from '../config/logger';
 
@@ -24,6 +25,20 @@ export function notFoundHandler(): RequestHandler {
 
 export function errorHandler(): ErrorRequestHandler {
   return (err, req, res, _next) => {
+    if (err instanceof multer.MulterError) {
+      const isSizeLimit = err.code === 'LIMIT_FILE_SIZE';
+      res.status(isSizeLimit ? 413 : 400).json({
+        success: false,
+        error: {
+          code: err.code,
+          message: isSizeLimit
+            ? 'Ukuran file terlalu besar. Gambar ikon maksimal 5 MB; file rilis maksimal 500 MB.'
+            : 'Upload file gagal. Pastikan hanya satu file diunggah dan coba lagi.',
+        },
+      } satisfies ErrorBody);
+      return;
+    }
+
     // JSON body parse failure (express.json throws SyntaxError on bad JSON).
     // We must return 400, not 500, because this is a client-side input error.
     const isBodyParseError =
@@ -47,18 +62,20 @@ export function errorHandler(): ErrorRequestHandler {
     // older code in clients (see api.ts handling).
     if (err instanceof ZodError) {
       const fieldErrors = err.flatten().fieldErrors as Record<string, string[] | undefined>;
-      const friendlyFieldErrors: Record<string, string> = {};
+      const friendlyFieldErrors: Record<string, string[]> = {};
       for (const [k, v] of Object.entries(fieldErrors)) {
-        if (v && v.length > 0) friendlyFieldErrors[k] = v[0];
+        if (v && v.length > 0) friendlyFieldErrors[k] = v;
       }
+      const formErrors = err.flatten().formErrors;
+      const firstFieldError = Object.values(friendlyFieldErrors).flat()[0];
       res.status(422).json({
         success: false,
         error: {
           code: 'VALIDATION_ERROR',
-          message: 'Periksa kembali data registrasi Anda.',
+          message: firstFieldError ?? formErrors[0] ?? 'Periksa kembali data yang Anda masukkan.',
           details: {
             fieldErrors: friendlyFieldErrors,
-            formErrors: err.flatten().formErrors,
+            formErrors,
           },
         },
       } satisfies ErrorBody);
@@ -117,6 +134,23 @@ export function errorHandler(): ErrorRequestHandler {
         res.status(404).json({
           success: false,
           error: { code: 'NOT_FOUND', message: 'Data yang diminta tidak ditemukan.' },
+        } satisfies ErrorBody);
+        return;
+      }
+      if (err.code === 'P2022') {
+        res.status(500).json({
+          success: false,
+          error: {
+            code: 'DATABASE_SCHEMA_OUTDATED',
+            message: 'Struktur database belum diperbarui. Jalankan migrasi database lalu mulai ulang backend.',
+          },
+        } satisfies ErrorBody);
+        return;
+      }
+      if (err.code === 'P2000') {
+        res.status(422).json({
+          success: false,
+          error: { code: 'VALUE_TOO_LONG', message: 'Salah satu nilai terlalu panjang. Periksa kembali isian form.' },
         } satisfies ErrorBody);
         return;
       }

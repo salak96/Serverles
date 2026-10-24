@@ -11,7 +11,7 @@
     "build:backend": "npm --prefix backend run build",
     "build:frontend": "npm --prefix frontend run build",
     "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
-    "db:push": "npm --prefix backend exec prisma db push",
+    "db:push": "npm --prefix backend run prisma:push",
     "db:seed": "npm --prefix backend run seed",
     "db:studio": "npm --prefix backend exec prisma studio",
     "test:backend": "npm --prefix backend test",

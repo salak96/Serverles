@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, UserX, UserCheck, Shield, Trash2, Plus, Edit, CheckSquare, Square } from 'lucide-react';
+import { Search, UserX, UserCheck, Shield, Trash2, Plus, Edit, CheckSquare, Square, Eye, EyeOff } from 'lucide-react';
 import { api, HttpError } from '@/lib/api';
 import { Card, Badge, Skeleton, ConfirmDialog } from '@/components/ui';
 import { formatJakarta } from '@/lib/format';
@@ -21,7 +21,10 @@ export function AdminUsersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<UserForm>(emptyForm);
+  const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkDelete, setBulkDelete] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -38,8 +41,11 @@ export function AdminUsersPage() {
   });
   const create = useMutation({
     mutationFn: () => api('/admin/users', { method: 'POST', body: form }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin', 'users'] }); setShowForm(false); setEditingId(null); setForm(emptyForm); setFormError(''); },
-    onError: (e) => setFormError(e instanceof HttpError ? e.message : 'Gagal membuat pengguna.'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin', 'users'] }); setShowForm(false); setEditingId(null); setForm(emptyForm); setFormError(''); setNameError(''); setPasswordError(''); },
+    onError: (e) => {
+      if (e instanceof HttpError && e.code === 'NAME_ALREADY_EXISTS') setNameError(e.message);
+      else setFormError(e instanceof HttpError ? e.message : 'Gagal membuat pengguna.');
+    },
   });
   const remove = useMutation({
     mutationFn: (id: string) => api(`/admin/users/${id}`, { method: 'DELETE' }),
@@ -107,7 +113,7 @@ export function AdminUsersPage() {
               <button className="btn btn-ghost text-xs" onClick={() => setSelected(new Set())}>Batal pilih</button>
             </div>
           )}
-          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm(emptyForm); setShowForm(true); }}><Plus className="w-4 h-4" /> Tambah Pengguna</button>
+          <button className="btn btn-primary" onClick={() => { setEditingId(null); setForm(emptyForm); setShowPassword(false); setShowForm(true); }}><Plus className="w-4 h-4" /> Tambah Pengguna</button>
         </div>
       </div>
 
@@ -183,9 +189,24 @@ export function AdminUsersPage() {
           <Card className="w-full max-w-md">
             <h3 className="font-semibold text-lg mb-4">{editingId ? 'Edit Pengguna' : 'Tambah Pengguna'}</h3>
             <div className="space-y-3">
-              <div><label className="label">Nama</label><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+              <div><label className="label" htmlFor="admin-user-name">Nama</label><input id="admin-user-name" className="input" aria-invalid={Boolean(nameError)} aria-describedby={nameError ? 'admin-user-name-error' : undefined} value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); setNameError(''); }} />{nameError && <p id="admin-user-name-error" role="alert" className="mt-1 text-xs text-danger">{nameError}</p>}</div>
               <div><label className="label">Email</label><input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} disabled={!!editingId} /></div>
-              <div><label className="label">Password {editingId ? '(kosongkan jika tidak diubah)' : ''}</label><input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+              <div>
+                <label className="label" htmlFor="admin-user-password">Password {editingId ? '(kosongkan jika tidak diubah)' : ''}</label>
+                <div className="relative">
+                  <input id="admin-user-password" className="input pr-12" type={showPassword ? 'text' : 'password'} autoComplete="new-password" aria-invalid={Boolean(passwordError)} aria-describedby={passwordError ? 'admin-user-password-error' : undefined} value={form.password} onChange={(e) => { setForm({ ...form, password: e.target.value }); setPasswordError(''); }} />
+                  <button
+                    type="button"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-9 w-9 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-line/40 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    onClick={() => setShowPassword((visible) => !visible)}
+                    aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? <EyeOff className="h-[18px] w-[18px]" aria-hidden="true" /> : <Eye className="h-[18px] w-[18px]" aria-hidden="true" />}
+                  </button>
+                </div>
+                {passwordError && <p id="admin-user-password-error" role="alert" className="mt-1 text-xs text-danger">{passwordError}</p>}
+              </div>
               <div><label className="label">Role</label>
                 <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as 'USER' | 'ADMIN' })}>
                   <option value="USER">User</option>
@@ -203,8 +224,23 @@ export function AdminUsersPage() {
               )}
               {formError && <p className="text-sm text-danger">{formError}</p>}
               <div className="flex gap-2 justify-end">
-                <button className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingId(null); setFormError(''); setForm(emptyForm); }}>Batal</button>
+                <button className="btn btn-secondary" onClick={() => { setShowForm(false); setEditingId(null); setFormError(''); setNameError(''); setPasswordError(''); setForm(emptyForm); }}>Batal</button>
                 <button className="btn btn-primary" disabled={create.isPending || update.isPending} onClick={() => {
+                  setNameError('');
+                  setPasswordError('');
+                  if (form.name.trim().length < 2) {
+                    setNameError('Nama minimal 2 karakter.');
+                    return;
+                  }
+                  const duplicateName = list.data?.items.some((item) => item.id !== editingId && item.name.trim().toLocaleLowerCase() === form.name.trim().toLocaleLowerCase());
+                  if (duplicateName) {
+                    setNameError('Nama pengguna sudah digunakan.');
+                    return;
+                  }
+                  if ((!editingId || form.password) && form.password.length < 8) {
+                    setPasswordError('Password minimal 8 karakter.');
+                    return;
+                  }
                   if (editingId) {
                     const data: { name: string; role: 'USER' | 'ADMIN'; status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_VERIFICATION'; password?: string } = { name: form.name, role: form.role, status: form.status };
                     if (form.password) data.password = form.password;

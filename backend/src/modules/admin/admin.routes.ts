@@ -5,18 +5,19 @@ import { requireAuth, requireAdmin } from '../../middleware/auth';
 import { NotFoundError, ValidationError, BusinessError } from '../../utils/errors';
 import { z } from 'zod';
 import { recordAudit } from '../../services/audit.service';
-import { notify } from '../../services/notification.service';
+import { notify, notifyMany } from '../../services/notification.service';
 import { emailService } from '../../services/email.service';
 import { issueLicense, revokeLicense, extendLicense } from '../licenses/licenses.service';
 import { unbindDevice } from '../licenses/devices.service';
-import { formatJakarta } from '../../utils/date';
+import { formatJakarta, formatRupiah } from '../../utils/date';
+import { sendTelegramAdminNotification, notifyTelegramOrderVerified } from '../../services/telegram.service';
 
 const router = Router();
 
 const userUpdateSchema = z.object({
   status: z.enum(['ACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION']).optional(),
   role: z.enum(['USER', 'ADMIN']).optional(),
-  name: z.string().min(2).max(120).optional(),
+  name: z.string().trim().min(2).max(120).optional(),
 });
 
 const licenseCreateSchema = z.object({
@@ -165,12 +166,14 @@ router.post(
   '/users',
   asyncHandler(async (req, res) => {
     const body = z.object({
-      name: z.string().min(2).max(120),
+      name: z.string().trim().min(2).max(120),
       email: z.string().trim().toLowerCase().email(),
       password: z.string().min(8).max(128),
       role: z.enum(['USER', 'ADMIN']).optional(),
       status: z.enum(['ACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION']).optional(),
     }).parse(req.body);
+    const duplicateName = await prisma.user.findFirst({ where: { name: body.name } });
+    if (duplicateName) throw new BusinessError('Nama pengguna sudah digunakan.', 'NAME_ALREADY_EXISTS', 409, { field: 'name' });
     const exists = await prisma.user.findUnique({ where: { email: body.email } });
     if (exists) throw new BusinessError('Email sudah terdaftar.', 'EMAIL_ALREADY_EXISTS', 409, { field: 'email' });
     const { hashPassword } = await import('../auth/auth.service');
@@ -286,6 +289,10 @@ router.patch(
   asyncHandler(async (req, res) => {
     const bodySchema = userUpdateSchema.extend({ password: z.string().min(8).max(128).optional() });
     const body = bodySchema.parse(req.body);
+    if (body.name) {
+      const duplicateName = await prisma.user.findFirst({ where: { name: body.name, id: { not: req.params.id } } });
+      if (duplicateName) throw new BusinessError('Nama pengguna sudah digunakan.', 'NAME_ALREADY_EXISTS', 409, { field: 'name' });
+    }
     const updateData: Record<string, unknown> = { name: body.name, role: body.role, status: body.status };
     if (body.password) {
       const { hashPassword } = await import('../auth/auth.service');
@@ -477,6 +484,21 @@ router.post(
       body: `Order untuk paket ${order.plan.name} telah dikonfirmasi. Lisensi sudah aktif.`,
       category: 'PAYMENT',
     });
+    const admins = await prisma.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, select: { id: true } });
+    await notifyMany(admins.map((admin) => admin.id), {
+      title: 'Pembayaran berhasil diverifikasi',
+      body: `Order ${order.id} dari ${order.user.email} untuk paket ${order.plan.name} sudah PAID.`,
+      category: 'PAYMENT',
+      link: '/admin/orders',
+    });
+    await notifyTelegramOrderVerified({
+      orderId: order.id,
+      customerEmail: order.user.email,
+      planName: order.plan.name,
+      durationDays: order.durationDays,
+      amountFormatted: formatRupiah(Number(order.amount)),
+      verifiedAt: now,
+    });
     await recordAudit({
       actorUserId: req.user!.id,
       action: 'admin.order.confirm',
@@ -574,18 +596,33 @@ router.post(
   '/notifications',
   asyncHandler(async (req, res) => {
     const body = notificationCreateSchema.parse(req.body);
+    let recipientLabel = '';
     if (body.isGlobal) {
       await prisma.notification.create({
         data: { userId: null, title: body.title, body: body.body, category: body.category, link: body.link ?? null },
       });
+      recipientLabel = 'Semua pengguna';
     } else if (body.userIds && body.userIds.length > 0) {
       await prisma.notification.createMany({
         data: body.userIds.map((userId) => ({ userId, title: body.title, body: body.body, category: body.category, link: body.link ?? null })),
       });
+      recipientLabel = `${body.userIds.length} pengguna terpilih`;
     } else {
       throw new ValidationError('userIds atau isGlobal wajib diisi.');
     }
-    res.status(201).json({ success: true, data: { message: 'Notifikasi dikirim.' } });
+    const telegram = await sendTelegramAdminNotification({
+      title: body.title,
+      body: body.body,
+      category: body.category,
+      link: body.link,
+      recipientLabel,
+    });
+    const message = !telegram.configured
+      ? 'Notifikasi tersimpan di aplikasi, tetapi Telegram belum dikonfigurasi.'
+      : telegram.delivered
+        ? 'Notifikasi tersimpan di aplikasi dan terkirim ke Telegram.'
+        : `Notifikasi tersimpan di aplikasi, tetapi gagal dikirim ke Telegram: ${telegram.reason ?? 'alasan tidak diketahui'}`;
+    res.status(201).json({ success: true, data: { message, telegram } });
   })
 );
 

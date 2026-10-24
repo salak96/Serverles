@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { MailCheck } from 'lucide-react';
 import { api, HttpError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Card, Badge } from '@/components/ui';
@@ -61,6 +62,27 @@ export function ProfilePage() {
     },
   });
 
+  const resendVerification = useMutation({
+    mutationFn: () => api<{ message: string; emailDelivery: { configured: boolean } }>('/auth/resend-verification', {
+      method: 'POST',
+      body: { email: user?.email },
+    }),
+    onSuccess: (response) => {
+      setToast({
+        type: 'success',
+        text: response.emailDelivery.configured
+          ? 'Jika email akun ini belum diverifikasi, tautan verifikasi baru telah dikirim.'
+          : 'Permintaan diterima. Pengiriman email belum dikonfigurasi; hubungi administrator.',
+      });
+    },
+    onError: (error) => setToast({
+      type: 'error',
+      text: error instanceof HttpError
+        ? error.message
+        : 'Tidak dapat menghubungi server. Periksa koneksi Anda lalu coba lagi.',
+    }),
+  });
+
   return (
     <div className="space-y-4 max-w-3xl">
       <h2 className="text-xl font-semibold">Pengaturan Akun</h2>
@@ -83,6 +105,25 @@ export function ProfilePage() {
             </Badge>
             <Badge variant={user?.role === 'ADMIN' ? 'accent' : 'muted'}>{user?.role}</Badge>
           </div>
+          {!user?.emailVerified && (
+            <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
+              <p className="text-sm leading-relaxed text-ink-muted">
+                Verifikasi alamat email untuk mengaktifkan akses ke seluruh fitur akun.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary mt-3 min-h-11 w-full shrink-0 sm:mt-0 sm:w-auto"
+                onClick={() => resendVerification.mutate()}
+                disabled={resendVerification.isPending || !user?.email}
+              >
+                {resendVerification.isPending ? (
+                  'Mengirim...'
+                ) : (
+                  <><MailCheck className="h-4 w-4" aria-hidden="true" /> Kirim verifikasi email</>
+                )}
+              </button>
+            </div>
+          )}
           <button type="submit" className="btn btn-primary" disabled={updateProfile.isPending}>
             {updateProfile.isPending ? 'Menyimpan...' : 'Simpan perubahan'}
           </button>

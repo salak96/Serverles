@@ -9,7 +9,7 @@ export function AdminNotificationsPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const send = useMutation({
-    mutationFn: () => api('/admin/notifications', {
+    mutationFn: () => api<{ message: string }>('/admin/notifications', {
       method: 'POST',
       body: {
         title: form.title,
@@ -19,8 +19,9 @@ export function AdminNotificationsPage() {
         userIds: form.isGlobal ? undefined : form.userIds.split(',').map((s) => s.trim()).filter(Boolean),
       },
     }),
-    onSuccess: () => {
-      setToast({ type: 'success', text: 'Notifikasi terkirim.' });
+    onSuccess: (result) => {
+      const isWarning = result.message.includes('belum dikonfigurasi') || result.message.includes('gagal');
+      setToast({ type: isWarning ? 'error' : 'success', text: result.message });
       setForm({ ...form, title: '', body: '' });
     },
     onError: (e) => setToast({ type: 'error', text: e instanceof HttpError ? e.message : 'Gagal.' }),

@@ -1,5 +1,11 @@
 const BASE = ((import.meta as unknown as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL ?? '/api/v1').replace(/\/$/, '');
 
+export function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path === BASE || path.startsWith(`${BASE}/`)) return path;
+  return `${BASE}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
 export interface ApiSuccess<T> { success: true; data: T }
 export interface ApiError { success: false; error: { code: string; message: string; details?: unknown } }
 export type ApiResponse<T> = ApiSuccess<T> | ApiError;
@@ -40,7 +46,7 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
-  const url = new URL(BASE + (path.startsWith('/') ? path : `/${path}`), window.location.origin);
+  const url = new URL(apiUrl(path), window.location.origin);
   if (query) {
     Object.entries(query).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));

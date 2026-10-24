@@ -85,6 +85,7 @@ export interface Tool {
   description: string | null;
   category: string;
   iconUrl: string | null;
+  downloadUrl: string | null;
   requiredPlan: { name: string; slug: string } | null;
   minAppVersion: string | null;
   latestRelease: { version: string; releasedAt: string; fileSize: number } | null;

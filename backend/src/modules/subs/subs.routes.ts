@@ -17,6 +17,8 @@ import { env } from '../../config/env';
 import { formatRupiah } from '../../utils/date';
 import { handleWebhook } from './subs.webhook';
 import { recordAudit } from '../../services/audit.service';
+import { notifyTelegramNewOrder } from '../../services/telegram.service';
+import { notifyMany } from '../../services/notification.service';
 
 const router = Router();
 
@@ -145,6 +147,21 @@ router.post(
         metadata: { planSlug: plan.slug, planName: plan.name } as object,
         expiresAt: new Date(Date.now() + 15 * 60 * 1000),
       },
+    });
+
+    await notifyTelegramNewOrder({
+      orderId: order.id,
+      customerEmail: req.user!.email,
+      planName: plan.name,
+      durationDays: order.durationDays,
+      amountFormatted: formatRupiah(Number(order.amount)),
+    });
+    const admins = await prisma.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, select: { id: true } });
+    await notifyMany(admins.map((admin) => admin.id), {
+      title: 'Pembayaran menunggu verifikasi',
+      body: `${req.user!.email} membuat order ${plan.name} (${duration} hari) sebesar ${formatRupiah(Number(order.amount))}.`,
+      category: 'PAYMENT',
+      link: '/admin/orders',
     });
 
     res.status(201).json({

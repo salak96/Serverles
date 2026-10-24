@@ -373,6 +373,7 @@ model Tool {
   description    String?  @db.Text
   category       String   @db.VarChar(60)
   iconUrl        String?  @db.VarChar(255)
+  downloadUrl    String?  @db.Text
   requiredPlanId String?
   minAppVersion  String?  @db.VarChar(40)
   isActive       Boolean  @default(true)

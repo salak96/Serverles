@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check } from 'lucide-react';
+import { Check, Copy, CheckCheck } from 'lucide-react';
 import { api, HttpError } from '@/lib/api';
 import { Card, Badge, EmptyState, Skeleton } from '@/components/ui';
 import { formatJakarta } from '@/lib/format';
@@ -136,28 +136,47 @@ function PaymentModal({ order, secondsLeft, onClose }: { order: OrderPreview; se
   const minutes = Math.floor(secondsLeft / 60).toString().padStart(2, '0');
   const seconds = (secondsLeft % 60).toString().padStart(2, '0');
   const expired = secondsLeft === 0;
+  const [copiedAmount, setCopiedAmount] = useState(false);
+  const copyAmount = async () => {
+    try {
+      await navigator.clipboard.writeText(order.order.amountFormatted);
+      setCopiedAmount(true);
+      window.setTimeout(() => setCopiedAmount(false), 2000);
+    } catch {
+      setCopiedAmount(false);
+    }
+  };
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-3">
+      <Card className="w-full max-w-md max-h-[92vh] overflow-y-auto !p-5 sm:!p-6">
+        <div className="mb-5 flex items-center justify-between">
           <h3 className="text-lg font-semibold">Pembayaran QRIS</h3>
           <button className="text-xl text-ink-muted hover:text-ink" onClick={onClose}>×</button>
         </div>
-        <div className="rounded-lg bg-warning/10 border border-warning/30 text-warning p-3 text-center mb-4">
-          <div className="text-xs uppercase tracking-wide">Selesaikan pembayaran dalam</div>
-          <div className="font-mono text-2xl font-bold">{minutes}:{seconds}</div>
+        <div className="mb-4 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-center text-warning">
+          <div className="text-xs font-medium uppercase tracking-wider">Selesaikan pembayaran dalam</div>
+          <div className="mt-1 font-mono text-2xl font-bold tabular-nums">{minutes}:{seconds}</div>
         </div>
-        <div className="text-center">
-          <img src="/assets/payment.jpeg" alt="QRIS PawangTools" className="w-full max-w-xs mx-auto rounded-lg border border-line" />
+        <div className="mb-4 rounded-2xl border border-accent/30 bg-accent/5 px-4 py-5 text-center">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted">Total pembayaran · {order.order.plan.name}</div>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+            <div className="break-words text-3xl font-extrabold tracking-tight text-ink sm:text-4xl">{order.order.amountFormatted}</div>
+            <button type="button" className="btn btn-secondary min-h-10" onClick={copyAmount} aria-label="Salin nominal pembayaran">
+              {copiedAmount ? <CheckCheck className="h-4 w-4 text-success" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+              {copiedAmount ? 'Tersalin' : 'Salin'}
+            </button>
+          </div>
+          <div className="mt-1 text-xs text-ink-muted">Bayar sesuai nominal yang tertera</div>
         </div>
-        <div className="mt-4 space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-ink-muted">Order</span><span className="font-mono">{order.order.id}</span></div>
-          <div className="flex justify-between"><span className="text-ink-muted">Paket</span><span>{order.order.plan.name}</span></div>
-          <div className="flex justify-between font-semibold"><span>Total</span><span>{order.order.amountFormatted}</span></div>
+        <div className="flex justify-center rounded-xl border border-line bg-white p-3">
+          <img src="/assets/payment.jpeg" alt="QRIS PawangTools" className="h-auto w-full max-w-[280px] rounded-lg object-contain" />
         </div>
-        <p className="text-xs text-ink-muted mt-4 text-center">Setelah pembayaran, status order akan berubah setelah pembayaran diverifikasi. Jangan menutup modal sebelum menyelesaikan pembayaran.</p>
-        {expired && <p className="text-sm text-danger text-center mt-3">Waktu pembayaran telah habis. Buat order baru jika diperlukan.</p>}
-        <button className="btn btn-secondary w-full mt-4" onClick={onClose}>Tutup</button>
+        <div className="mt-4 rounded-lg bg-bg-sidebar px-3 py-2 text-center text-xs text-ink-muted">
+          <span>Order </span><span className="break-all font-mono text-ink">{order.order.id}</span>
+        </div>
+        <p className="mt-4 text-center text-xs leading-relaxed text-ink-muted">Setelah pembayaran, status order berubah setelah pembayaran diverifikasi.</p>
+        {expired && <p className="mt-3 text-center text-sm text-danger">Waktu pembayaran telah habis. Buat order baru jika diperlukan.</p>}
+        <button className="btn btn-secondary mt-4 min-h-11 w-full" onClick={onClose}>Tutup</button>
       </Card>
     </div>
   );

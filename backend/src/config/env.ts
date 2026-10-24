@@ -102,6 +102,10 @@ export const env = {
     WEBHOOK_SECRET: optional('PAYMENT_WEBHOOK_SECRET', ''),
     CALLBACK_URL: optional('PAYMENT_CALLBACK_URL', ''),
   },
+  TELEGRAM: {
+    BOT_TOKEN: optional('TELEGRAM_BOT_TOKEN', ''),
+    CHAT_ID: optional('TELEGRAM_CHAT_ID', ''),
+  },
   STORAGE: {
     PROVIDER: optional('STORAGE_PROVIDER', 'local'),
     BUCKET: optional('STORAGE_BUCKET', ''),
