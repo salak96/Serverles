@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, CheckCheck } from 'lucide-react';
+import { Check, Copy, CheckCheck, MessageCircle } from 'lucide-react';
 import { api, HttpError } from '@/lib/api';
 import { Card, Badge, EmptyState, Skeleton } from '@/components/ui';
 import { formatJakarta } from '@/lib/format';
@@ -139,13 +139,23 @@ function PaymentModal({ order, secondsLeft, onClose }: { order: OrderPreview; se
   const [copiedAmount, setCopiedAmount] = useState(false);
   const copyAmount = async () => {
     try {
-      await navigator.clipboard.writeText(order.order.amountFormatted);
+      await navigator.clipboard.writeText(String(Math.round(order.order.amount)));
       setCopiedAmount(true);
       window.setTimeout(() => setCopiedAmount(false), 2000);
     } catch {
       setCopiedAmount(false);
     }
   };
+  const whatsappMessage = [
+    'Halo admin, saya sudah melakukan pembayaran dan ingin mengirimkan bukti transfer.',
+    '',
+    `Paket: ${order.order.plan.name}`,
+    `Nominal: ${order.order.amountFormatted}`,
+    `ID Order: ${order.order.id}`,
+    '',
+    'Saya lampirkan bukti pembayarannya di chat ini. Terima kasih.',
+  ].join('\n');
+  const whatsappUrl = `https://wa.me/6285867336036?text=${encodeURIComponent(whatsappMessage)}`;
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
       <Card className="w-full max-w-md max-h-[92vh] overflow-y-auto !p-5 sm:!p-6">
@@ -174,6 +184,9 @@ function PaymentModal({ order, secondsLeft, onClose }: { order: OrderPreview; se
         <div className="mt-4 rounded-lg bg-bg-sidebar px-3 py-2 text-center text-xs text-ink-muted">
           <span>Order </span><span className="break-all font-mono text-ink">{order.order.id}</span>
         </div>
+        <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="btn mt-4 min-h-11 w-full bg-[#25D366] text-white hover:bg-[#1EBE5D]">
+          <MessageCircle className="h-4 w-4" aria-hidden="true" /> Kirim bukti transfer via WhatsApp
+        </a>
         <p className="mt-4 text-center text-xs leading-relaxed text-ink-muted">Setelah pembayaran, status order berubah setelah pembayaran diverifikasi.</p>
         {expired && <p className="mt-3 text-center text-sm text-danger">Waktu pembayaran telah habis. Buat order baru jika diperlukan.</p>}
         <button className="btn btn-secondary mt-4 min-h-11 w-full" onClick={onClose}>Tutup</button>

@@ -13,6 +13,13 @@ interface VerifiedOrderAlertInput extends NewOrderAlertInput {
   verifiedAt: Date;
 }
 
+function maskEmail(email: string): string {
+  const [localPart, domain] = email.split('@');
+  if (!localPart || !domain) return 'email disamarkan';
+  const visible = localPart.length <= 2 ? localPart.slice(0, 1) : localPart.slice(0, 2);
+  return `${visible}${'*'.repeat(Math.max(3, localPart.length - visible.length))}@${domain}`;
+}
+
 export interface AdminNotificationInput {
   title: string;
   body: string;
@@ -71,7 +78,7 @@ export async function notifyTelegramNewOrder(input: NewOrderAlertInput): Promise
   const text = [
     '🛒 Order baru masuk',
     `ID: ${input.orderId}`,
-    `Email: ${input.customerEmail}`,
+    `Email: ${maskEmail(input.customerEmail)}`,
     `Paket: ${input.planName}`,
     `Durasi: ${input.durationDays} hari`,
     `Total: ${input.amountFormatted}`,
@@ -103,7 +110,7 @@ export async function notifyTelegramOrderVerified(input: VerifiedOrderAlertInput
   const text = [
     '✅ Pembayaran terverifikasi',
     `ID Order: ${input.orderId}`,
-    `Email: ${input.customerEmail}`,
+    `Email: ${maskEmail(input.customerEmail)}`,
     `Paket: ${input.planName}`,
     `Durasi: ${input.durationDays} hari`,
     `Total: ${input.amountFormatted}`,

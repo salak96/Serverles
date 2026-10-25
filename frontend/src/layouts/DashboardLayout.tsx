@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import {
-  LayoutDashboard, Bell, CreditCard, Key, HardDrive, Package, Settings,
+  LayoutDashboard, Bell, CreditCard, Key, HardDrive, Package, Settings, Code2,
   LogOut, Shield, Menu, X, HelpCircle, Activity, User,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
@@ -21,7 +21,7 @@ const ITEMS: NavItem[] = [
   { to: '/licenses', label: 'Lisensi & HWID', icon: Key, userOnly: true },
   { to: '/devices', label: 'Perangkat', icon: HardDrive },
   { to: '/tools', label: 'Bot & Tools', icon: Package },
-  { to: '/activity', label: 'Log Aktivitas', icon: Activity },
+  { to: '/api-docs', label: 'Dokumentasi API', icon: Code2, admin: true },
   { to: '/profile', label: 'Pengaturan Akun', icon: Settings },
   { to: '/admin', label: 'Admin Dashboard', icon: Shield, admin: true },
   { to: '/admin/users', label: 'Admin · Pengguna', icon: User, admin: true },
@@ -31,7 +31,7 @@ const ITEMS: NavItem[] = [
   { to: '/admin/tools', label: 'Admin · Tools', icon: Package, admin: true },
   { to: '/admin/notifications', label: 'Admin · Notifikasi', icon: Bell, admin: true },
   { to: '/admin/settings', label: 'Admin · Pengaturan', icon: Settings, admin: true },
-  { to: '/admin/audit', label: 'Admin · Audit Log', icon: Activity, admin: true },
+  { to: '/activity', label: 'Log Aktivitas', icon: Activity },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -41,6 +41,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/licenses': 'Lisensi & HWID',
   '/devices': 'Perangkat',
   '/tools': 'Bot & Tools',
+  '/api-docs': 'Dokumentasi API',
   '/profile': 'Pengaturan Akun',
   '/activity': 'Log Aktivitas',
   '/admin': 'Admin Dashboard',
@@ -51,7 +52,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/tools': 'Manajemen Tools',
   '/admin/notifications': 'Manajemen Notifikasi',
   '/admin/settings': 'Pengaturan Sistem',
-  '/admin/audit': 'Audit Log',
 };
 
 export function DashboardLayout() {

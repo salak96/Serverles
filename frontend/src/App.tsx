@@ -13,6 +13,7 @@ import { SubscriptionsPage } from './pages/subscriptions/SubscriptionsPage';
 import { LicensesPage } from './pages/licenses/LicensesPage';
 import { DevicesPage } from './pages/devices/DevicesPage';
 import { ToolsPage } from './pages/tools/ToolsPage';
+import { ApiDocsPage } from './pages/docs/ApiDocsPage';
 import { ProfilePage } from './pages/profile/ProfilePage';
 import { AdminDashboardPage } from './pages/admin/AdminDashboardPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
@@ -97,6 +98,7 @@ export function App() {
         <Route path="/licenses/:id" element={<LicensesPage />} />
         <Route path="/devices" element={<DevicesPage />} />
         <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/api-docs" element={<Protected adminOnly><ApiDocsPage /></Protected>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/activity" element={<ActivityPage />} />
 
