@@ -145,7 +145,7 @@ router.post(
     const storage = getStorage();
     const { Readable } = await import('node:stream');
     const stream = Readable.from(req.file.buffer);
-    const uploaded = await storage.putObject(storageKey, { stream, size: req.file.size }).catch((e) => {
+    const uploaded = await storage.putObject(storageKey, { stream, size: req.file.size }).catch((e: unknown) => {
       throw new ValidationError(`Upload gagal: ${e instanceof Error ? e.message : 'unknown'}`);
     });
     const release = await prisma.toolRelease.create({

@@ -5,7 +5,8 @@ dist/
 .env.production
 *.log
 logs/
-storage/
+/storage/
+!src/services/storage/
 keys/
 coverage/
 .DS_Store
