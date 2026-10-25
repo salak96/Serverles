@@ -16,7 +16,7 @@ const schema = z.object({
   email: z.string().trim().email('Format email tidak valid.').max(191, 'Email terlalu panjang.'),
   password: z.string().min(8, 'Password minimal 8 karakter.').max(128, 'Password maksimal 128 karakter.'),
   confirmPassword: z.string().min(1, 'Konfirmasi password wajib diisi.'),
-  acceptTerms: z.literal(true, { errorMap: () => ({ message: 'Anda harus menyetujui syarat layanan.' }) }),
+  acceptTerms: z.boolean().refine((val) => val === true, { message: 'Anda harus menyetujui syarat layanan.' }),
 }).refine((d) => d.password === d.confirmPassword, {
   message: 'Konfirmasi password tidak cocok.', path: ['confirmPassword'],
 });
