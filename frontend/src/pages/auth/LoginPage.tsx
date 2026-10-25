@@ -7,6 +7,7 @@ import { api, HttpError, setAccessToken } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { LogIn } from 'lucide-react';
 import { AuthFooter, AuthShell, FormAlert, FormInput, PasswordInput, PrimaryButton } from './AuthComponents';
+import { isCaptchaConfigured, TurnstileCaptcha } from '@/components/TurnstileCaptcha';
 
 const schema = z.object({
   email: z.string().trim().email('Format email tidak valid.'),
@@ -21,6 +22,9 @@ export function LoginPage() {
   const [searchParams] = useSearchParams();
   const [serverError, setServerError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaResetTrigger, setCaptchaResetTrigger] = useState(0);
+  const captchaRequired = isCaptchaConfigured();
 
   useEffect(() => {
     const state = location.state as { message?: string } | null;
@@ -38,7 +42,7 @@ export function LoginPage() {
     setServerError(null);
     setNotice(null);
     try {
-      const login = await api<{ accessToken?: string }>('/auth/login', { method: 'POST', body: data });
+      const login = await api<{ accessToken?: string }>('/auth/login', { method: 'POST', body: { ...data, ...(captchaRequired ? { captchaToken } : {}) } });
       setAccessToken(login.accessToken ?? null);
       const me = await api<{ id: string; name: string; email: string; role: 'USER' | 'ADMIN'; status: 'ACTIVE' | 'SUSPENDED' | 'PENDING_VERIFICATION'; emailVerified: boolean; lastLoginAt: string | null; createdAt: string }>('/auth/me', {
         headers: login.accessToken ? { Authorization: `Bearer ${login.accessToken}` } : undefined,
@@ -47,6 +51,8 @@ export function LoginPage() {
       const next = searchParams.get('next') || '/dashboard';
       navigate(next, { replace: true });
     } catch (e) {
+      setCaptchaToken('');
+      setCaptchaResetTrigger((prev) => prev + 1);
       if (e instanceof HttpError) setServerError(e.message);
       else setServerError('Tidak dapat menghubungi server. Coba lagi.');
     }
@@ -77,9 +83,10 @@ export function LoginPage() {
           }
           {...register('password')}
         />
+        {captchaRequired && <TurnstileCaptcha onToken={setCaptchaToken} resetTrigger={captchaResetTrigger} />}
         {serverError && <FormAlert>{serverError}</FormAlert>}
         <div className="pt-1">
-          <PrimaryButton loading={isSubmitting} loadingText="Memproses...">
+          <PrimaryButton loading={isSubmitting} disabled={captchaRequired && !captchaToken} loadingText="Memproses...">
             <LogIn className="w-[18px] h-[18px]" aria-hidden="true" /> Masuk
           </PrimaryButton>
         </div>

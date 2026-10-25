@@ -7,7 +7,9 @@ import { notify } from '../../services/notification.service';
 import { Prisma } from '@prisma/client';
 
 export interface ActivationResult {
-  status: 'ok' | 'already_bound' | 'limit_reached' | 'license_inactive';
+  status: 'ok' | 'already_bound' | 'limit_reached' | 'license_inactive' | 'cooldown_active';
+  created: boolean;
+  nextAvailableAt?: Date;
   device: {
     id: string;
     deviceHash: string;
@@ -34,10 +36,10 @@ export async function activateDeviceAtomic(params: {
   });
   if (!license) throw new NotFoundError('Lisensi tidak ditemukan.');
   if (license.status !== 'ACTIVE' || license.expiresAt <= new Date()) {
-    return { status: 'license_inactive', device: emptyDevice() };
+    return { status: 'license_inactive', created: false, device: emptyDevice() };
   }
   if (license.user.status !== 'ACTIVE' || !license.user.emailVerifiedAt) {
-    return { status: 'license_inactive', device: emptyDevice() };
+    return { status: 'license_inactive', created: false, device: emptyDevice() };
   }
 
   const deviceHash = hmacDeviceId(params.deviceIdRaw);
@@ -53,12 +55,26 @@ export async function activateDeviceAtomic(params: {
         data: { lastSeenAt: new Date(), deviceName: params.deviceName ?? existing.deviceName, appVersion: params.appVersion ?? existing.appVersion, platform: params.platform ?? existing.platform },
       });
       await recordActivationAttempt(tx, { licenseId: license.id, deviceHash, result: 'SUCCESS', reasonCode: 'ALREADY_BOUND', ip: params.ip, userAgent: params.userAgent });
-      return { status: 'already_bound', device: toDeviceDto(updated) };
+      return { status: 'already_bound', created: false, device: toDeviceDto(updated) };
     }
+
+    const lastCompletedReset = await tx.deviceReset.findFirst({
+      where: { licenseId: license.id, status: 'COMPLETED', completedAt: { not: null } },
+      orderBy: { completedAt: 'desc' },
+      select: { completedAt: true },
+    });
+    const nextAvailableAt = lastCompletedReset?.completedAt
+      ? new Date(lastCompletedReset.completedAt.getTime() + 12 * 60 * 60 * 1000)
+      : undefined;
+    if (nextAvailableAt && nextAvailableAt > new Date()) {
+      await recordActivationAttempt(tx, { licenseId: license.id, deviceHash, result: 'FAILURE', reasonCode: 'RESET_COOLDOWN_ACTIVE', ip: params.ip, userAgent: params.userAgent });
+      return { status: 'cooldown_active', created: false, nextAvailableAt, device: emptyDevice() };
+    }
+
     const activeCount = await tx.device.count({ where: { licenseId: license.id, status: 'ACTIVE' } });
     if (activeCount >= maxDevices) {
       await recordActivationAttempt(tx, { licenseId: license.id, deviceHash, result: 'FAILURE', reasonCode: 'DEVICE_LIMIT_REACHED', ip: params.ip, userAgent: params.userAgent });
-      return { status: 'limit_reached', device: emptyDevice() };
+      return { status: 'limit_reached', created: false, device: emptyDevice() };
     }
     if (existing) {
       const rebound = await tx.device.update({
@@ -74,7 +90,7 @@ export async function activateDeviceAtomic(params: {
         },
       });
       await recordActivationAttempt(tx, { licenseId: license.id, deviceHash, result: 'SUCCESS', reasonCode: 'REBOUND', ip: params.ip, userAgent: params.userAgent });
-      return { status: 'ok', device: toDeviceDto(rebound) };
+      return { status: 'ok', created: false, device: toDeviceDto(rebound) };
     }
     const created = await tx.device.create({
       data: {
@@ -88,7 +104,7 @@ export async function activateDeviceAtomic(params: {
       },
     });
     await recordActivationAttempt(tx, { licenseId: license.id, deviceHash, result: 'SUCCESS', reasonCode: 'NEW_BIND', ip: params.ip, userAgent: params.userAgent });
-    return { status: 'ok', device: toDeviceDto(created) };
+    return { status: 'ok', created: true, device: toDeviceDto(created) };
   });
 }
 

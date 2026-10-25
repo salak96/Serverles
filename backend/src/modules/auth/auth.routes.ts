@@ -12,6 +12,9 @@ import {
   ValidationError,
 } from '../../utils/errors';
 import { recordAudit } from '../../services/audit.service';
+import { assertRegistrationIpAvailable, claimRegistrationIp } from '../../services/registrationAbuse.service';
+import { logger } from '../../config/logger';
+import { verifyCaptcha } from '../../services/captcha.service';
 import { emailService, verificationEmail, passwordResetEmail } from '../../services/email.service';
 import {
   EMAIL_VERIFY_TTL_HOURS,
@@ -87,7 +90,12 @@ router.post(
   authLimiter,
   asyncHandler(async (req, res) => {
     const body = registerSchema.parse(req.body);
+    await verifyCaptcha(body.captchaToken, clientIp(req));
     validatePasswordPolicy(body.password);
+    const registrationIp = clientIp(req);
+    if (env.REGISTRATION_SINGLE_ACCOUNT_PER_IP) {
+      await assertRegistrationIpAvailable(registrationIp);
+    }
 
     const existing = await prisma.user.findUnique({ where: { email: body.email } });
     if (existing) {
@@ -107,6 +115,22 @@ router.post(
         emailVerifiedAt: env.EMAIL_VERIFICATION_REQUIRED ? null : new Date(),
       },
     });
+
+    if (env.REGISTRATION_SINGLE_ACCOUNT_PER_IP) {
+      await claimRegistrationIp(registrationIp, user.id).catch(async (error: unknown) => {
+        // Registration-IP claim is an abuse guard; DB uniqueness provides atomicity for concurrent requests.
+        // If another request won the claim race, remove this newly-created unverified account before returning.
+        await prisma.emailVerificationToken.deleteMany({ where: { userId: user.id } });
+        await prisma.passwordResetToken.deleteMany({ where: { userId: user.id } });
+        await prisma.auditLog.deleteMany({ where: { actorUserId: user.id } });
+        await prisma.user.delete({ where: { id: user.id } });
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+          throw new ConflictError('Pendaftaran dari jaringan ini sudah pernah digunakan. Silakan masuk ke akun yang ada atau hubungi dukungan jika berbagi jaringan.');
+        }
+        logger.error({ error }, 'registration_ip_claim_failed');
+        throw error;
+      });
+    }
 
     let sent: { delivered: boolean; reason?: string } = {
       delivered: false,
@@ -244,6 +268,7 @@ router.post(
   strictAuthLimiter,
   asyncHandler(async (req, res) => {
     const body = loginSchema.parse(req.body);
+    await verifyCaptcha(body.captchaToken, clientIp(req));
     const user = await prisma.user.findUnique({ where: { email: body.email } });
 
     // Always run argon2 verify even if user not found, to avoid timing attacks.

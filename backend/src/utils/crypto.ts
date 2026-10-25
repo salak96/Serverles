@@ -46,6 +46,11 @@ export function hmacDeviceId(identity: string): string {
   return createHmac('sha256', env.HWID_HMAC_SECRET).update(identity).digest('hex');
 }
 
+/** HMAC an IP address for abuse checks without storing the raw address. */
+export function hmacClientIp(ip: string): string {
+  return createHmac('sha256', env.HWID_HMAC_SECRET).update(`registration-ip:${ip}`).digest('hex');
+}
+
 /** Constant-time equality for hashes/tokens. */
 export function safeEqualHex(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

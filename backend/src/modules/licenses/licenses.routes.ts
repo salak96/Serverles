@@ -4,20 +4,26 @@ import { asyncHandler } from '../../middleware/errorHandler';
 import { requireAuth } from '../../middleware/auth';
 import { makeLimiter } from '../../middleware/rateLimit';
 import { NotFoundError, ValidationError, BusinessError } from '../../utils/errors';
-import { sha256OfKey } from '../../utils/crypto';
+import { hmacDeviceId, sha256OfKey } from '../../utils/crypto';
 import { revealKeyIfPossible, rotateKey } from './licenses.service';
 import { activateDeviceAtomic, resetDevice, unbindDevice } from './devices.service';
 import {
   activateDeviceSchema,
+  activateDeviceWithKeySchema,
   resetDeviceSchema,
   validateLicenseSchema,
 } from './licenses.schema';
 import { notify } from '../../services/notification.service';
+import { notifyTelegramDeviceConnected } from '../../services/telegram.service';
+import { notifyTelegramLicenseSecurityEvent } from '../../services/telegram.service';
+import { formatJakarta } from '../../utils/date';
+import { logger } from '../../config/logger';
 
 const router = Router();
 
 const rotateLimiter = makeLimiter({ windowMs: 60 * 60 * 1000, max: 5, message: 'Terlalu banyak percobaan rotasi. Coba lagi nanti.' });
 const validateLimiter = makeLimiter({ windowMs: 60 * 1000, max: 60, message: 'Terlalu banyak percobaan validasi.' });
+const desktopActivationLimiter = makeLimiter({ windowMs: 60 * 60 * 1000, max: 10, message: 'Terlalu banyak percobaan aktivasi perangkat. Coba lagi dalam satu jam.' });
 
 function clientIp(req: { headers: Record<string, string | string[] | undefined>; ip?: string }): string {
   const xf = req.headers['x-forwarded-for'];
@@ -105,6 +111,19 @@ router.post(
   rotateLimiter,
   asyncHandler(async (req, res) => {
     const issued = await rotateKey(req.params.id, req.user!.id);
+    void prisma.license.findUnique({
+      where: { id: req.params.id },
+      include: { plan: { select: { name: true } } },
+    }).then((license) => {
+      if (!license) return;
+      return notifyTelegramLicenseSecurityEvent({
+        event: 'api_key_rotated',
+        customerEmail: req.user!.email,
+        planName: license.plan.name,
+        licenseStatus: license.status,
+        occurredAt: new Date(),
+      });
+    }).catch((error: unknown) => logger.warn({ error, licenseId: req.params.id }, 'telegram_key_rotation_alert_failed'));
     await notify({
       userId: req.user!.id,
       title: 'API key lisensi dirotasi',
@@ -169,7 +188,24 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = activateDeviceSchema.parse({ deviceId: (req.body as { deviceId?: string }).deviceId ?? '' });
     if (!body.deviceId) throw new ValidationError('deviceId wajib diisi.');
+    const license = await prisma.license.findUnique({ where: { id: req.params.id }, include: { plan: { select: { name: true } }, user: { select: { email: true } } } });
+    if (!license) throw new NotFoundError('Lisensi tidak ditemukan.');
+    if (license.userId !== req.user!.id && req.user!.role !== 'ADMIN') throw new BusinessError('Tidak diizinkan.', 'FORBIDDEN', 403);
+    const device = await prisma.device.findUnique({ where: { licenseId_deviceHash: { licenseId: req.params.id, deviceHash: hmacDeviceId(body.deviceId) } } });
     await unbindDevice(req.params.id, body.deviceId, req.user!.id, req.user!.role === 'ADMIN');
+    if (device?.status === 'ACTIVE') {
+      void notifyTelegramLicenseSecurityEvent({
+        event: 'device_unbound',
+        customerEmail: license.user.email,
+        planName: license.plan.name,
+        licenseStatus: license.status,
+        maskedDeviceId: maskDeviceHash(device.deviceHash),
+        deviceName: device.deviceName,
+        platform: device.platform,
+        appVersion: device.appVersion,
+        occurredAt: new Date(),
+      });
+    }
     res.json({ success: true, data: { message: 'Perangkat berhasil dilepas.' } });
   })
 );
@@ -208,6 +244,10 @@ router.post(
   '/:id/devices/:deviceId/reset',
   requireAuth,
   asyncHandler(async (req, res) => {
+    const license = await prisma.license.findUnique({ where: { id: req.params.id }, include: { plan: { select: { name: true } }, user: { select: { email: true } } } });
+    if (!license) throw new NotFoundError('Lisensi tidak ditemukan.');
+    if (license.userId !== req.user!.id && req.user!.role !== 'ADMIN') throw new BusinessError('Tidak diizinkan.', 'FORBIDDEN', 403);
+    const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
     const body = resetDeviceSchema.parse(req.body ?? {});
     const result = await resetDevice({
       licenseId: req.params.id,
@@ -218,6 +258,32 @@ router.post(
       ip: clientIp(req),
       userAgent: (req.headers['user-agent'] as string) ?? '',
     });
+    if (result.status === 'COMPLETED') {
+      void notifyTelegramLicenseSecurityEvent({
+        event: 'device_reset_completed',
+        customerEmail: license.user.email,
+        planName: license.plan.name,
+        licenseStatus: license.status,
+        maskedDeviceId: device?.deviceHash ? maskDeviceHash(device.deviceHash) : undefined,
+        deviceName: device?.deviceName,
+        platform: device?.platform,
+        appVersion: device?.appVersion,
+        nextAvailableAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+        occurredAt: new Date(),
+      });
+    } else {
+      void notifyTelegramLicenseSecurityEvent({
+        event: 'device_reset_requested',
+        customerEmail: license.user.email,
+        planName: license.plan.name,
+        licenseStatus: license.status,
+        maskedDeviceId: device?.deviceHash ? maskDeviceHash(device.deviceHash) : undefined,
+        deviceName: device?.deviceName,
+        platform: device?.platform,
+        appVersion: device?.appVersion,
+        occurredAt: new Date(),
+      });
+    }
     res.json({
       success: true,
       data: {
@@ -234,6 +300,9 @@ router.post(
   '/:id/devices/reset',
   requireAuth,
   asyncHandler(async (req, res) => {
+    const license = await prisma.license.findUnique({ where: { id: req.params.id }, include: { plan: { select: { name: true } }, user: { select: { email: true } } } });
+    if (!license) throw new NotFoundError('Lisensi tidak ditemukan.');
+    if (license.userId !== req.user!.id && req.user!.role !== 'ADMIN') throw new BusinessError('Tidak diizinkan.', 'FORBIDDEN', 403);
     const body = resetDeviceSchema.parse(req.body ?? {});
     const result = await resetDevice({
       licenseId: req.params.id,
@@ -242,6 +311,14 @@ router.post(
       reason: body.reason,
       ip: clientIp(req),
       userAgent: (req.headers['user-agent'] as string) ?? '',
+    });
+    void notifyTelegramLicenseSecurityEvent({
+      event: result.status === 'COMPLETED' ? 'device_reset_completed' : 'device_reset_requested',
+      customerEmail: license.user.email,
+      planName: license.plan.name,
+      licenseStatus: license.status,
+      nextAvailableAt: result.status === 'COMPLETED' ? new Date(Date.now() + 12 * 60 * 60 * 1000) : undefined,
+      occurredAt: new Date(),
     });
     res.json({
       success: true,
@@ -259,8 +336,157 @@ router.delete(
   '/:id/devices/:deviceId',
   requireAuth,
   asyncHandler(async (req, res) => {
+    const license = await prisma.license.findUnique({ where: { id: req.params.id }, include: { plan: { select: { name: true } } } });
+    if (!license) throw new NotFoundError('Lisensi tidak ditemukan.');
+    if (license.userId !== req.user!.id && req.user!.role !== 'ADMIN') throw new BusinessError('Tidak diizinkan.', 'FORBIDDEN', 403);
+    const device = await prisma.device.findUnique({ where: { id: req.params.deviceId } });
     await unbindDevice(req.params.id, req.params.deviceId, req.user!.id, req.user!.role === 'ADMIN');
+    if (device?.status === 'ACTIVE') {
+      void notifyTelegramLicenseSecurityEvent({
+        event: 'device_unbound',
+        customerEmail: req.user!.email,
+        planName: license.plan.name,
+        licenseStatus: license.status,
+        maskedDeviceId: maskDeviceHash(device.deviceHash),
+        deviceName: device.deviceName,
+        platform: device.platform,
+        appVersion: device.appVersion,
+        occurredAt: new Date(),
+      });
+    }
     res.json({ success: true, data: { message: 'Perangkat dilepas.' } });
+  })
+);
+
+// POST /api/v1/licenses/activate-device (public desktop activation using license key)
+router.post(
+  '/activate-device',
+  desktopActivationLimiter,
+  asyncHandler(async (req, res) => {
+    const body = activateDeviceWithKeySchema.parse(req.body);
+    const license = await prisma.license.findUnique({
+      where: { keyHash: sha256OfKey(body.licenseKey) },
+      select: { id: true, status: true, expiresAt: true, userId: true },
+    });
+
+    // Keep missing, pending, and unusable keys indistinguishable to callers.
+    if (!license || license.status === 'PENDING') {
+      return res.json({ success: false, data: { valid: false, error_code: 'LICENSE_INVALID' } });
+    }
+    if (license.status === 'REVOKED') {
+      return res.json({ success: false, data: { valid: false, error_code: 'LICENSE_REVOKED' } });
+    }
+    if (license.status === 'SUSPENDED') {
+      return res.json({ success: false, data: { valid: false, error_code: 'LICENSE_SUSPENDED' } });
+    }
+    if (license.status === 'EXPIRED' || license.expiresAt <= new Date()) {
+      return res.json({ success: false, data: { valid: false, error_code: 'LICENSE_EXPIRED' } });
+    }
+
+    const owner = await prisma.user.findUnique({
+      where: { id: license.userId },
+      select: { status: true, emailVerifiedAt: true },
+    });
+    if (!owner?.emailVerifiedAt) {
+      return res.json({ success: false, data: { valid: false, error_code: 'EMAIL_NOT_VERIFIED' } });
+    }
+    if (owner.status !== 'ACTIVE') {
+      return res.json({ success: false, data: { valid: false, error_code: 'LICENSE_SUSPENDED' } });
+    }
+
+    const result = await activateDeviceAtomic({
+      licenseId: license.id,
+      deviceIdRaw: body.deviceId,
+      deviceName: body.deviceName,
+      platform: body.platform,
+      appVersion: body.appVersion,
+      ip: clientIp(req),
+      userAgent: (req.headers['user-agent'] as string) ?? '',
+    });
+
+    if (result.status === 'limit_reached') {
+      return res.json({ success: false, data: { valid: false, device_status: 'NOT_BOUND', error_code: 'DEVICE_LIMIT_REACHED' } });
+    }
+    if (result.status === 'license_inactive') {
+      return res.json({ success: false, data: { valid: false, error_code: 'LICENSE_INACTIVE' } });
+    }
+    if (result.status === 'cooldown_active') {
+      return res.json({ success: false, data: { valid: false, device_status: 'NOT_BOUND', error_code: 'RESET_COOLDOWN_ACTIVE', next_available_at: result.nextAvailableAt } });
+    }
+
+    if (result.created) {
+      const activatedLicense = await prisma.license.findUnique({
+        where: { id: license.id },
+        include: {
+          plan: { select: { name: true, maxDevices: true } },
+          devices: { where: { status: 'ACTIVE' }, select: { id: true } },
+        },
+      });
+      const activatedOwner = await prisma.user.findUnique({ where: { id: license.userId }, select: { email: true } });
+      if (activatedLicense && activatedOwner) {
+        const notificationBody = [
+          `Perangkat: ${result.device.deviceName ?? 'Perangkat tanpa nama'}`,
+          `Paket ${activatedLicense.plan.name}`,
+          `${activatedLicense.devices.length}/${activatedLicense.plan.maxDevices} perangkat · berakhir ${formatJakarta(activatedLicense.expiresAt)}`,
+          'Status: ACTIVE',
+          `${result.device.platform ?? 'platform tidak diketahui'} · ${result.device.appVersion ?? 'versi tidak diketahui'}`,
+          `HWID: ${maskDeviceHash(result.device.deviceHash)}`,
+          `Terakhir aktif: ${formatJakarta(result.device.lastSeenAt)}`,
+        ].join('\n');
+
+        void notify({
+          userId: license.userId,
+          title: 'Perangkat baru terhubung',
+          body: notificationBody,
+          category: 'DEVICE',
+          link: '/licenses',
+        }).catch((error: unknown) => logger.warn({ error, licenseId: license.id }, 'device_connection_notification_failed'));
+        void notifyTelegramDeviceConnected({
+          customerEmail: activatedOwner.email,
+          planName: activatedLicense.plan.name,
+          activeDevices: activatedLicense.devices.length,
+          maxDevices: activatedLicense.plan.maxDevices,
+          expiresAt: activatedLicense.expiresAt,
+          licenseStatus: 'ACTIVE',
+          deviceName: result.device.deviceName,
+          platform: result.device.platform,
+          appVersion: result.device.appVersion,
+          maskedDeviceId: maskDeviceHash(result.device.deviceHash),
+          lastSeenAt: result.device.lastSeenAt,
+        }).catch((error: unknown) => logger.warn({ error, licenseId: license.id }, 'telegram_device_connection_notification_failed'));
+      }
+    }
+
+    const current = await prisma.license.findUnique({
+      where: { id: license.id },
+      include: {
+        plan: { select: { name: true, slug: true, maxDevices: true, features: true } },
+        devices: { where: { status: 'ACTIVE' }, select: { id: true } },
+      },
+    });
+    if (!current) return res.json({ success: false, data: { valid: false, error_code: 'LICENSE_INVALID' } });
+
+    return res.json({
+      success: true,
+      data: {
+        valid: true,
+        license_status: 'ACTIVE',
+        plan: { name: current.plan.name, slug: current.plan.slug, max_devices: current.plan.maxDevices, features: current.plan.features },
+        expires_at: current.expiresAt,
+        device_status: 'BOUND',
+        device: {
+          id: result.device.id,
+          device_name: result.device.deviceName,
+          platform: result.device.platform,
+          app_version: result.device.appVersion,
+          bound_at: result.device.boundAt,
+          last_seen_at: result.device.lastSeenAt,
+        },
+        active_devices: current.devices.length,
+        allowed_features: current.plan.features,
+        server_time: new Date(),
+      },
+    });
   })
 );
 

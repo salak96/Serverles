@@ -2,14 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { prisma } from '../../config/prisma';
 import { asyncHandler } from '../../middleware/errorHandler';
 import { requireAuth } from '../../middleware/auth';
-import { ForbiddenError } from '../../utils/errors';
-
-function requireNonAdmin(req: Request, _res: Response, next: NextFunction): void {
-  if (req.user?.role === 'ADMIN') {
-    return next(new ForbiddenError('Admin tidak dapat membuat atau mengelola langganan/order.'));
-  }
-  next();
-}
+import { BusinessError, ForbiddenError } from '../../utils/errors';
 import { makeLimiter } from '../../middleware/rateLimit';
 import { NotFoundError, ValidationError } from '../../utils/errors';
 import { z } from 'zod';
@@ -18,8 +11,16 @@ import { formatRupiah } from '../../utils/date';
 import { handleWebhook } from './subs.webhook';
 import { recordAudit } from '../../services/audit.service';
 import { notifyTelegramNewOrder } from '../../services/telegram.service';
-import { notifyMany } from '../../services/notification.service';
+import { notifyMany, notify } from '../../services/notification.service';
+import { issueLicense } from '../licenses/licenses.service';
+import { hmacClientIp } from '../../utils/crypto';
 
+function requireNonAdmin(req: Request, _res: Response, next: NextFunction): void {
+  if (req.user?.role === 'ADMIN') {
+    return next(new ForbiddenError('Admin tidak dapat membuat atau mengelola langganan/order.'));
+  }
+  next();
+}
 const router = Router();
 
 const checkoutSchema = z.object({
@@ -28,6 +29,12 @@ const checkoutSchema = z.object({
 });
 
 const webhookLimiter = makeLimiter({ windowMs: 60_000, max: 120, message: 'Webhook rate limit.' });
+
+function clientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') return forwarded.split(',')[0]?.trim() ?? req.ip ?? '';
+  return req.ip ?? '';
+}
 
 // GET /api/v1/subscriptions/me
 router.get(
@@ -96,6 +103,101 @@ router.post(
     const durations = (plan.availableDurations as Array<{ days: number; price: number; label?: string }>) ?? [];
     const override = durations.find((d) => d.days === duration);
     const basePrice = override ? override.price : Number(plan.price) * (duration / plan.durationDays);
+
+    const isFreePlan = plan.slug.toLowerCase() === 'free' || Number(plan.price) === 0;
+    if (isFreePlan) {
+      const ip = clientIp(req);
+      if (env.FREE_PLAN_SINGLE_CLAIM_PER_IP && ip && ip !== 'unknown') {
+        const claimKey = `free-ip-claim:${hmacClientIp(ip)}`;
+        const previousIpClaim = await prisma.appSetting.findUnique({ where: { key: claimKey }, select: { id: true } });
+        if (previousIpClaim) {
+          throw new BusinessError('Paket Free sudah pernah diambil dari jaringan ini.', 'FREE_PLAN_IP_ALREADY_CLAIMED', 409);
+        }
+      }
+      const existingFreeOrder = await prisma.order.findFirst({
+        where: {
+          userId: req.user!.id,
+          OR: [
+            { planId: plan.id },
+            { metadata: { path: '$.planSlug', equals: plan.slug } },
+          ],
+        },
+        select: { id: true },
+      });
+      const existingFreeSubscription = await prisma.subscription.findFirst({ where: { userId: req.user!.id, planId: plan.id }, select: { id: true } });
+      if (existingFreeOrder || existingFreeSubscription) {
+        throw new BusinessError('Paket Free hanya dapat diambil satu kali per akun.', 'FREE_PLAN_ALREADY_CLAIMED', 409);
+      }
+      const freeClaimKey = `free-claim:${req.user!.id}:${plan.id}`;
+      try {
+        await prisma.appSetting.create({ data: { key: freeClaimKey, value: { claimedAt: new Date().toISOString() }, updatedBy: req.user!.id } });
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+          throw new BusinessError('Paket Free hanya dapat diambil satu kali per akun.', 'FREE_PLAN_ALREADY_CLAIMED', 409);
+        }
+        throw error;
+      }
+
+      const freeIpClaimKey = env.FREE_PLAN_SINGLE_CLAIM_PER_IP && ip && ip !== 'unknown'
+        ? `free-ip-claim:${hmacClientIp(ip)}`
+        : null;
+      if (freeIpClaimKey) {
+        try {
+          await prisma.appSetting.create({ data: { key: freeIpClaimKey, value: { claimedAt: new Date().toISOString() }, updatedBy: req.user!.id } });
+        } catch (error) {
+          await prisma.appSetting.delete({ where: { key: freeClaimKey } }).catch(() => undefined);
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+            throw new BusinessError('Paket Free sudah pernah diambil dari jaringan ini.', 'FREE_PLAN_IP_ALREADY_CLAIMED', 409);
+          }
+          throw error;
+        }
+      }
+
+      try {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + duration * 24 * 60 * 60 * 1000);
+        const order = await prisma.order.create({
+          data: {
+            userId: req.user!.id,
+            planId: plan.id,
+            amount: 0,
+            currency: plan.currency,
+            status: 'PAID',
+            provider: 'free',
+            durationDays: duration,
+            paidAt: now,
+            expiresAt,
+            metadata: { planSlug: plan.slug, planName: plan.name, freeClaim: true } as object,
+          },
+        });
+        const subscription = await prisma.subscription.create({
+          data: { userId: req.user!.id, planId: plan.id, status: 'ACTIVE', startsAt: now, expiresAt },
+        });
+        await issueLicense({
+          userId: req.user!.id,
+          planId: plan.id,
+          durationDays: duration,
+          name: `${plan.name} - ${now.toISOString().slice(0, 10)}`,
+          ip: clientIp(req),
+          userAgent: (req.headers['user-agent'] as string) ?? '',
+        });
+        await prisma.order.update({ where: { id: order.id }, data: { subscriptionId: subscription.id } });
+        await notify({ userId: req.user!.id, title: 'Paket Free diaktifkan', body: `Paket ${plan.name} aktif selama ${duration} hari. Lisensi Anda sudah tersedia.`, category: 'SUBSCRIPTION' });
+        await recordAudit({ actorUserId: req.user!.id, action: 'subscription.free.claim', entityType: 'Order', entityId: order.id, result: 'SUCCESS', ip: clientIp(req) });
+        return res.status(201).json({
+          success: true,
+          data: {
+            freePlan: true,
+            order: { id: order.id, amount: 0, amountFormatted: formatRupiah(0), currency: order.currency, status: order.status, durationDays: duration, expiresAt, plan: { name: plan.name, slug: plan.slug } },
+            payment: { provider: 'free', configured: true, message: 'Paket Free dan lisensi berhasil diaktifkan.' },
+          },
+        });
+      } catch (error) {
+        await prisma.appSetting.delete({ where: { key: freeClaimKey } }).catch(() => undefined);
+        if (freeIpClaimKey) await prisma.appSetting.delete({ where: { key: freeIpClaimKey } }).catch(() => undefined);
+        throw error;
+      }
+    }
 
     const provider = env.PAYMENT.PROVIDER;
     const now = new Date();

@@ -68,6 +68,7 @@ function smtpSecure(): boolean {
 
 const NODE_ENV = optional('NODE_ENV', 'development');
 const IS_PRODUCTION = NODE_ENV === 'production';
+const IS_TEST = NODE_ENV === 'test' || process.env.VITEST === 'true';
 
 export const env = {
   NODE_ENV,
@@ -77,6 +78,10 @@ export const env = {
   FRONTEND_URL: optional('FRONTEND_URL', 'http://localhost:5173'),
   APP_URL: appUrl(),
   EMAIL_VERIFICATION_REQUIRED: asBool('EMAIL_VERIFICATION_REQUIRED', true),
+  CAPTCHA_ENABLED: IS_TEST ? false : asBool('CAPTCHA_ENABLED', true),
+  CAPTCHA_SECRET_KEY: optional('CAPTCHA_SECRET_KEY', IS_PRODUCTION ? '' : '1x0000000000000000000000000000000AA'),
+  REGISTRATION_SINGLE_ACCOUNT_PER_IP: asBool('REGISTRATION_SINGLE_ACCOUNT_PER_IP', IS_PRODUCTION),
+  FREE_PLAN_SINGLE_CLAIM_PER_IP: asBool('FREE_PLAN_SINGLE_CLAIM_PER_IP', IS_PRODUCTION),
   BACKEND_PUBLIC_URL: optional('BACKEND_PUBLIC_URL', 'http://localhost:3000'),
   SESSION_SECRET: required('SESSION_SECRET', IS_PRODUCTION ? undefined : 'dev-session-secret-please-change-32b'),
   TOKEN_SECRET: required('TOKEN_SECRET', IS_PRODUCTION ? undefined : 'dev-token-secret-please-change-32b'),

@@ -34,6 +34,15 @@ async function cleanup(): Promise<void> {
   await prisma.user.deleteMany({ where: { id: u.id } });
 }
 
+async function cleanupEmail(email: string): Promise<void> {
+  const u = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (!u) return;
+  await prisma.emailVerificationToken.deleteMany({ where: { userId: u.id } });
+  await prisma.passwordResetToken.deleteMany({ where: { userId: u.id } });
+  await prisma.auditLog.deleteMany({ where: { actorUserId: u.id } });
+  await prisma.user.delete({ where: { id: u.id } });
+}
+
 beforeAll(async () => { await cleanup(); });
 afterAll(async () => { await cleanup(); await prisma.$disconnect(); });
 
@@ -44,6 +53,8 @@ const validPayload = {
   confirmPassword: 'TestP@ssw0rd!1',
   acceptTerms: true,
 };
+
+const uniqueIp = `198.51.${Math.floor(Date.now() / 256) % 255}.${Date.now() % 255}`;
 
 describe('register error handling', () => {
   it('1. all fields empty -> 422 with per-field errors', async () => {
@@ -123,6 +134,7 @@ describe('register error handling', () => {
   it('9. valid registration -> 201 with email delivery info', async () => {
     const r = await request(app)
       .post('/api/v1/auth/register')
+      .set('X-Forwarded-For', `198.51.100.${Math.floor(Math.random() * 150) + 50}`)
       .send({ ...validPayload, email: `valid+${unique}@x.local` });
     expect(r.status).toBe(201);
     expect(r.body.success).toBe(true);
@@ -133,6 +145,30 @@ describe('register error handling', () => {
     const body = JSON.stringify(r.body);
     expect(body).not.toMatch(/passwordHash/);
     expect(body).not.toMatch(/password/i);
+  });
+
+  it('registration from an already claimed IP is rejected when the abuse guard is enabled', async () => {
+    const prior = process.env.REGISTRATION_SINGLE_ACCOUNT_PER_IP;
+    const { env } = await import('../src/config/env');
+    const originalValue = env.REGISTRATION_SINGLE_ACCOUNT_PER_IP;
+    Object.defineProperty(env, 'REGISTRATION_SINGLE_ACCOUNT_PER_IP', { value: true, configurable: true });
+    const firstEmail = `ip-first+${unique}@x.local`;
+    const secondEmail = `ip-second+${unique}@x.local`;
+    try {
+      const first = await request(app).post('/api/v1/auth/register').set('X-Forwarded-For', uniqueIp)
+        .send({ ...validPayload, email: firstEmail });
+      expect(first.status).toBe(201);
+      const second = await request(app).post('/api/v1/auth/register').set('X-Forwarded-For', uniqueIp)
+        .send({ ...validPayload, email: secondEmail });
+      expect(second.status).toBe(409);
+      expect(second.body.error.code).toBe('CONFLICT');
+    } finally {
+      Object.defineProperty(env, 'REGISTRATION_SINGLE_ACCOUNT_PER_IP', { value: originalValue, configurable: true });
+      if (prior === undefined) delete process.env.REGISTRATION_SINGLE_ACCOUNT_PER_IP;
+      else process.env.REGISTRATION_SINGLE_ACCOUNT_PER_IP = prior;
+      await cleanupEmail(firstEmail);
+      await cleanupEmail(secondEmail);
+    }
   });
 
   it('12. malformed JSON -> 400 with code INVALID_JSON (NOT 500)', async () => {
@@ -151,5 +187,41 @@ describe('register error handling', () => {
     const body = JSON.stringify(r.body);
     expect(body).not.toMatch(/passwordHash/);
     expect(body).not.toMatch(/"password"\s*:/);
+  });
+
+  it('rejects registration when CAPTCHA is enabled and missing', async () => {
+    const { env } = await import('../src/config/env');
+    const originalEnabled = env.CAPTCHA_ENABLED;
+    const originalSecret = env.CAPTCHA_SECRET_KEY;
+    Object.defineProperty(env, 'CAPTCHA_ENABLED', { value: true, configurable: true });
+    Object.defineProperty(env, 'CAPTCHA_SECRET_KEY', { value: 'dummy-secret', configurable: true });
+    try {
+      const res = await request(app)
+        .post('/api/v1/auth/register')
+        .send({ ...validPayload, email: `no-captcha+${unique}@x.local` });
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/captcha/i);
+    } finally {
+      Object.defineProperty(env, 'CAPTCHA_ENABLED', { value: originalEnabled, configurable: true });
+      Object.defineProperty(env, 'CAPTCHA_SECRET_KEY', { value: originalSecret, configurable: true });
+    }
+  });
+
+  it('rejects login when CAPTCHA is enabled and missing', async () => {
+    const { env } = await import('../src/config/env');
+    const originalEnabled = env.CAPTCHA_ENABLED;
+    const originalSecret = env.CAPTCHA_SECRET_KEY;
+    Object.defineProperty(env, 'CAPTCHA_ENABLED', { value: true, configurable: true });
+    Object.defineProperty(env, 'CAPTCHA_SECRET_KEY', { value: 'dummy-secret', configurable: true });
+    try {
+      const res = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: 'user@example.com', password: 'ValidPassword123' });
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/captcha/i);
+    } finally {
+      Object.defineProperty(env, 'CAPTCHA_ENABLED', { value: originalEnabled, configurable: true });
+      Object.defineProperty(env, 'CAPTCHA_SECRET_KEY', { value: originalSecret, configurable: true });
+    }
   });
 });

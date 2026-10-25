@@ -6,6 +6,7 @@ export const registerSchema = z.object({
   password: z.string().min(8, 'Password minimal 8 karakter.').max(128),
   confirmPassword: z.string(),
   acceptTerms: z.literal(true, { errorMap: () => ({ message: 'Anda harus menyetujui syarat layanan.' }) }),
+  captchaToken: z.string().optional(),
 }).refine((d) => d.password === d.confirmPassword, {
   message: 'Konfirmasi password tidak cocok.',
   path: ['confirmPassword'],
@@ -16,6 +17,7 @@ export type RegisterInput = z.infer<typeof registerSchema>;
 export const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email('Format email tidak valid.'),
   password: z.string().min(1, 'Password wajib diisi.'),
+  captchaToken: z.string().optional(),
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 

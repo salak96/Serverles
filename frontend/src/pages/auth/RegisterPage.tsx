@@ -9,6 +9,7 @@ import { Check, Circle, Mail, UserPlus } from 'lucide-react';
 import { PolicyModal } from '@/components/ui';
 import { termsOfServiceContent, privacyPolicyContent } from './policies';
 import { AuthFooter, AuthShell, FormAlert, FormError, FormInput, PasswordInput, PrimaryButton, StatusIcon } from './AuthComponents';
+import { isCaptchaConfigured, TurnstileCaptcha } from '@/components/TurnstileCaptcha';
 
 const schema = z.object({
   name: z.string().trim().min(2, 'Nama minimal 2 karakter.').max(120, 'Nama maksimal 120 karakter.'),
@@ -49,19 +50,27 @@ export function RegisterPage() {
   });
   const [password = '', confirmPassword = ''] = useWatch({ control, name: ['password', 'confirmPassword'] });
   const [serverError, setServerError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState('');
+  const [captchaResetTrigger, setCaptchaResetTrigger] = useState(0);
+  const captchaRequired = isCaptchaConfigured();
   const [emailInfo, setEmailInfo] = useState<{ configured: boolean; delivered: boolean; reason?: string } | null>(null);
   const [openModal, setOpenModal] = useState<'tos' | 'privacy' | null>(null);
 
   const onSubmit = async (data: FormData): Promise<void> => {
     setServerError(null);
     try {
-      const res = await api<{ message: string; emailVerificationRequired: boolean; emailDelivery: { configured: boolean; delivered: boolean; reason?: string } }>('/auth/register', { method: 'POST', body: data });
+      const res = await api<{ message: string; emailVerificationRequired: boolean; emailDelivery: { configured: boolean; delivered: boolean; reason?: string } }>('/auth/register', {
+        method: 'POST',
+        body: { ...data, ...(captchaRequired ? { captchaToken } : {}) },
+      });
       if (!res.emailVerificationRequired) {
         navigate('/auth/login', { replace: true, state: { message: 'Registrasi berhasil. Akun Anda sudah aktif, silakan login.' } });
         return;
       }
       setEmailInfo(res.emailDelivery);
     } catch (e) {
+      setCaptchaToken('');
+      setCaptchaResetTrigger((prev) => prev + 1);
       // Network failure (no HTTP response): distinct from server errors.
       if (e instanceof NetworkError) {
         setServerError(e.message);
@@ -204,9 +213,10 @@ export function RegisterPage() {
           {errors.acceptTerms && <FormError id="accept-terms-error">{errors.acceptTerms.message as string}</FormError>}
         </div>
 
+        {captchaRequired && <TurnstileCaptcha onToken={setCaptchaToken} resetTrigger={captchaResetTrigger} />}
         {serverError && <FormAlert>{serverError}</FormAlert>}
         <div className="pt-1">
-          <PrimaryButton loading={isSubmitting} loadingText="Membuat akun...">
+          <PrimaryButton loading={isSubmitting} disabled={captchaRequired && !captchaToken} loadingText="Membuat akun...">
             <UserPlus className="w-[18px] h-[18px]" aria-hidden="true" /> Buat Akun
           </PrimaryButton>
         </div>

@@ -1,5 +1,6 @@
 import { env } from '../config/env';
 import { logger } from '../config/logger';
+import { formatJakarta } from '../utils/date';
 
 interface NewOrderAlertInput {
   orderId: string;
@@ -13,11 +14,78 @@ interface VerifiedOrderAlertInput extends NewOrderAlertInput {
   verifiedAt: Date;
 }
 
+export interface DeviceConnectedAlertInput {
+  customerEmail: string;
+  planName: string;
+  activeDevices: number;
+  maxDevices: number;
+  expiresAt: Date;
+  licenseStatus: string;
+  deviceName: string | null;
+  platform: string | null;
+  appVersion: string | null;
+  maskedDeviceId: string;
+  lastSeenAt: Date;
+}
+
+export interface LicenseSecurityAlertInput {
+  event: 'api_key_rotated' | 'device_unbound' | 'device_reset_completed' | 'device_reset_requested';
+  customerEmail: string;
+  planName: string;
+  licenseStatus: string;
+  maskedDeviceId?: string;
+  deviceName?: string | null;
+  platform?: string | null;
+  appVersion?: string | null;
+  nextAvailableAt?: Date | null;
+  occurredAt: Date;
+}
+
 function maskEmail(email: string): string {
   const [localPart, domain] = email.split('@');
   if (!localPart || !domain) return 'email disamarkan';
   const visible = localPart.length <= 2 ? localPart.slice(0, 1) : localPart.slice(0, 2);
   return `${visible}${'*'.repeat(Math.max(3, localPart.length - visible.length))}@${domain}`;
+}
+
+export async function notifyTelegramLicenseSecurityEvent(input: LicenseSecurityAlertInput): Promise<void> {
+  const { BOT_TOKEN, CHAT_ID } = env.TELEGRAM;
+  if (!BOT_TOKEN || !CHAT_ID) return;
+
+  const eventLabels: Record<LicenseSecurityAlertInput['event'], string> = {
+    api_key_rotated: 'API key lisensi dirotasi',
+    device_unbound: 'Perangkat dilepas dari lisensi',
+    device_reset_completed: 'Reset perangkat selesai',
+    device_reset_requested: 'Permintaan reset perangkat',
+  };
+  const text = [
+    `🔐 ${eventLabels[input.event]}`,
+    `Email: ${maskEmail(input.customerEmail)}`,
+    `Paket: ${input.planName}`,
+    `Status lisensi: ${input.licenseStatus}`,
+    ...(input.deviceName ? [`Perangkat: ${input.deviceName}`] : []),
+    ...(input.platform || input.appVersion ? [`Platform/versi: ${input.platform ?? '—'} · ${input.appVersion ?? '—'}`] : []),
+    ...(input.maskedDeviceId ? [`HWID: ${input.maskedDeviceId}`] : []),
+    ...(input.nextAvailableAt ? [`Reset berikutnya: ${formatJakarta(input.nextAvailableAt)}`] : []),
+    `Waktu: ${formatJakarta(input.occurredAt)}`,
+  ].join('\n');
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: CHAT_ID, text, disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const result = await response.json().catch(() => null) as { ok?: boolean; description?: string; error_code?: number } | null;
+    if (!response.ok || !result?.ok) {
+      logger.warn({ statusCode: response.status, telegramErrorCode: result?.error_code, reason: result?.description, event: input.event }, 'telegram_license_security_event_failed');
+      return;
+    }
+    logger.info({ event: input.event }, 'telegram_license_security_event_sent');
+  } catch (error) {
+    logger.warn({ error, event: input.event }, 'telegram_license_security_event_failed');
+  }
 }
 
 export interface AdminNotificationInput {
@@ -132,5 +200,39 @@ export async function notifyTelegramOrderVerified(input: VerifiedOrderAlertInput
     logger.info({ orderId: input.orderId }, 'telegram_verified_order_notification_sent');
   } catch (error) {
     logger.warn({ error }, 'telegram_verified_order_notification_failed');
+  }
+}
+
+export async function notifyTelegramDeviceConnected(input: DeviceConnectedAlertInput): Promise<void> {
+  const { BOT_TOKEN, CHAT_ID } = env.TELEGRAM;
+  if (!BOT_TOKEN || !CHAT_ID) return;
+
+  const text = [
+    '🖥️ Perangkat baru terhubung',
+    `Email: ${maskEmail(input.customerEmail)}`,
+    `Paket ${input.planName}`,
+    `${input.activeDevices}/${input.maxDevices} perangkat · berakhir ${formatJakarta(input.expiresAt)}`,
+    `Status: ${input.licenseStatus}`,
+    input.deviceName ?? 'Perangkat tanpa nama',
+    `${input.platform ?? 'platform tidak diketahui'} · ${input.appVersion ?? 'versi tidak diketahui'}`,
+    `HWID: ${input.maskedDeviceId}`,
+    `Terakhir aktif: ${formatJakarta(input.lastSeenAt)}`,
+  ].join('\n');
+
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: CHAT_ID, text, disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const result = await response.json().catch(() => null) as { ok?: boolean; description?: string; error_code?: number } | null;
+    if (!response.ok || !result?.ok) {
+      logger.warn({ statusCode: response.status, telegramErrorCode: result?.error_code, reason: result?.description }, 'telegram_device_connected_notification_failed');
+      return;
+    }
+    logger.info({ planName: input.planName, licenseStatus: input.licenseStatus }, 'telegram_device_connected_notification_sent');
+  } catch (error) {
+    logger.warn({ error }, 'telegram_device_connected_notification_failed');
   }
 }

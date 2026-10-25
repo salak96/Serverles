@@ -84,6 +84,12 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 #   FRONTEND_URL=https://pawang.example.com
 #   BACKEND_PUBLIC_URL=https://api.pawang.example.com
 #   NODE_ENV=production
+#   EMAIL_VERIFICATION_REQUIRED=true
+#   REGISTRATION_SINGLE_ACCOUNT_PER_IP=true
+#   FREE_PLAN_SINGLE_CLAIM_PER_IP=true
+#   CAPTCHA_ENABLED=true
+#   CAPTCHA_SECRET_KEY=<Turnstile secret key; server-side only>
+#   TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (optional Telegram notifications)
 
 npm ci --omit=dev
 npx prisma migrate deploy
@@ -97,6 +103,7 @@ npm run build
 cd ../frontend
 cp .env.example .env
 # Edit .env: VITE_API_BASE_URL=/api/v1
+# Set VITE_TURNSTILE_SITE_KEY=<Turnstile site key> in the frontend build environment
 # (frontend diproxy oleh Nginx di path yang sama)
 npm ci
 npm run build
@@ -235,5 +242,10 @@ Backup disimpan ke `/var/backups/pawangtools/` dan di-rotate selama 14 hari.
   tidak terbaca. Jalankan dari cwd `backend/`.
 - **CORS error**: tambahkan origin frontend ke `FRONTEND_URL` dan `BACKEND_PUBLIC_URL`.
 - **Email tidak terkirim**: SMTP belum dikonfigurasi. Set `SMTP_*` di `.env`.
+- **Paket Free / pembatasan akun per IP**: set `REGISTRATION_SINGLE_ACCOUNT_PER_IP=true` dan
+  `FREE_PLAN_SINGLE_CLAIM_PER_IP=true` pada `backend/.env` production. Nilai pada
+  `.env.example` sengaja nonaktif agar pengembangan lokal dan pengujian tidak saling mengganggu.
+- **`.env` tidak ada setelah clone**: file rahasia sengaja tidak dilacak Git. Buat dari template
+  dengan `cp backend/.env.example backend/.env`, lalu isi nilai production langsung di VPS.
 - **License tidak bisa dirotasi**: `LICENSE_ENCRYPTION_KEY` belum di-set, atau
   key tidak bisa decrypt. Lihat log untuk detail.

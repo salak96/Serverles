@@ -37,3 +37,6 @@ export const validateLicenseSchema = z.object({
   deviceName: z.string().max(120).optional(),
 });
 export type ValidateLicenseInput = z.infer<typeof validateLicenseSchema>;
+
+export const activateDeviceWithKeySchema = validateLicenseSchema;
+export type ActivateDeviceWithKeyInput = z.infer<typeof activateDeviceWithKeySchema>;
