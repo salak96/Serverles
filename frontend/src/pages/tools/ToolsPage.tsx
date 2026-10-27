@@ -94,7 +94,7 @@ export function ToolsPage() {
             Daftar Bot & Tools
           </h1>
           <p className="mt-2 text-sm sm:text-base text-[#94A3B8] max-w-3xl leading-relaxed">
-            Semua bot otomatis terintegrasi langsung dengan gateway lisensi API ZZAMCODE dan proteksi HWID.
+            Semua bot otomatis terintegrasi langsung dengan gateway lisensi API PawangTools dan proteksi HWID.
           </p>
         </div>
 
