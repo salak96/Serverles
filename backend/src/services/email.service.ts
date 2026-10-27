@@ -38,8 +38,9 @@ export const emailService = {
       logger.info({ host: env.SMTP.HOST, port: env.SMTP.PORT }, 'smtp_connection_verified');
       return { connected: true };
     } catch (e) {
-      logger.error({ err: e, host: env.SMTP.HOST, port: env.SMTP.PORT }, 'smtp_connection_failed');
-      return { connected: false, reason: 'smtp_connection_failed' };
+      const reason = e instanceof Error ? e.message : 'smtp_connection_failed';
+      logger.error({ err: e, host: env.SMTP.HOST, port: env.SMTP.PORT, reason }, 'smtp_connection_failed');
+      return { connected: false, reason };
     }
   },
 
@@ -68,8 +69,9 @@ export const emailService = {
       });
       return { delivered: true };
     } catch (e) {
-      logger.error({ err: e, to: params.to, subject: params.subject }, 'email_send_failed');
-      return { delivered: false, reason: 'send_failed' };
+      const reason = e instanceof Error ? e.message : 'send_failed';
+      logger.error({ err: e, to: params.to, subject: params.subject, reason }, 'email_send_failed');
+      return { delivered: false, reason };
     }
   },
 };

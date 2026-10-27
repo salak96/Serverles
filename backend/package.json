@@ -16,6 +16,7 @@
     "seed": "tsx prisma/seed.ts",
     "bootstrap:admin": "tsx scripts/bootstrap-admin.ts",
     "test:telegram": "tsx scripts/test-telegram.ts",
+    "test:smtp": "tsx scripts/test-smtp.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest"
