@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { env } from '../../config/env';
 import { prisma } from '../../config/prisma';
 import { asyncHandler } from '../../middleware/errorHandler';
 import { requireAuth, requireAdmin } from '../../middleware/auth';
@@ -6,7 +7,7 @@ import { NotFoundError, ValidationError, BusinessError } from '../../utils/error
 import { z } from 'zod';
 import { recordAudit } from '../../services/audit.service';
 import { notify, notifyMany } from '../../services/notification.service';
-import { emailService } from '../../services/email.service';
+import { emailService, orderCompletedWithLicenseEmail } from '../../services/email.service';
 import { issueLicense, revokeLicense, extendLicense } from '../licenses/licenses.service';
 import { unbindDevice } from '../licenses/devices.service';
 import { formatJakarta, formatRupiah } from '../../utils/date';
@@ -466,7 +467,7 @@ router.post(
         });
 
     const { issueLicense } = await import('../licenses/licenses.service');
-    await issueLicense({
+    const issuedLicense = await issueLicense({
       userId: order.userId,
       planId: order.planId,
       durationDays: order.durationDays,
@@ -498,7 +499,23 @@ router.post(
       durationDays: order.durationDays,
       amountFormatted: formatRupiah(Number(order.amount)),
       verifiedAt: now,
+      licenseKey: issuedLicense.licenseKey,
     });
+
+    const portalUrl = `${env.APP_URL}/dashboard/licenses`;
+    const completionMail = orderCompletedWithLicenseEmail({
+      name: order.user.name || order.user.email,
+      orderId: order.id,
+      planName: order.plan.name,
+      durationDays: order.durationDays,
+      amountFormatted: formatRupiah(Number(order.amount)),
+      licenseKey: issuedLicense.licenseKey,
+      expiresAtFormatted: formatJakarta(issuedLicense.expiresAt),
+      portalUrl,
+    });
+    completionMail.to = order.user.email;
+    void emailService.send(completionMail);
+
     await recordAudit({
       actorUserId: req.user!.id,
       action: 'admin.order.confirm',

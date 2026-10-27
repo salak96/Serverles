@@ -10,8 +10,9 @@ interface NewOrderAlertInput {
   amountFormatted: string;
 }
 
-interface VerifiedOrderAlertInput extends NewOrderAlertInput {
+export interface VerifiedOrderAlertInput extends NewOrderAlertInput {
   verifiedAt: Date;
+  licenseKey?: string;
 }
 
 export interface DeviceConnectedAlertInput {
@@ -182,6 +183,7 @@ export async function notifyTelegramOrderVerified(input: VerifiedOrderAlertInput
     `Paket: ${input.planName}`,
     `Durasi: ${input.durationDays} hari`,
     `Total: ${input.amountFormatted}`,
+    ...(input.licenseKey ? [`🔑 License Key: ${input.licenseKey}`] : []),
     `Waktu verifikasi: ${input.verifiedAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}`,
   ].join('\n');
 

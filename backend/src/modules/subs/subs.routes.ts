@@ -12,6 +12,7 @@ import { handleWebhook } from './subs.webhook';
 import { recordAudit } from '../../services/audit.service';
 import { notifyTelegramNewOrder } from '../../services/telegram.service';
 import { notifyMany, notify } from '../../services/notification.service';
+import { emailService, orderPendingPaymentEmail } from '../../services/email.service';
 import { issueLicense } from '../licenses/licenses.service';
 import { hmacClientIp } from '../../utils/crypto';
 
@@ -258,6 +259,25 @@ router.post(
       durationDays: order.durationDays,
       amountFormatted: formatRupiah(Number(order.amount)),
     });
+
+    const userRecord = await prisma.user.findUnique({ where: { id: req.user!.id }, select: { name: true, email: true } });
+    const customerName = userRecord?.name || req.user!.email;
+    const checkoutUrl = `${env.APP_URL}/dashboard/subscriptions`;
+    const waText = encodeURIComponent(`Halo PawangTools, saya ingin konfirmasi pembayaran untuk Order #${order.id} Paket ${plan.name} (${order.durationDays} hari) total ${formatRupiah(Number(order.amount))}.`);
+    const waUrl = `https://wa.me/6285867336036?text=${waText}`;
+
+    const orderMail = orderPendingPaymentEmail({
+      name: customerName,
+      orderId: order.id,
+      planName: plan.name,
+      durationDays: order.durationDays,
+      amountFormatted: formatRupiah(Number(order.amount)),
+      checkoutUrl,
+      waUrl,
+    });
+    orderMail.to = req.user!.email;
+    void emailService.send(orderMail);
+
     const admins = await prisma.user.findMany({ where: { role: 'ADMIN', status: 'ACTIVE' }, select: { id: true } });
     await notifyMany(admins.map((admin) => admin.id), {
       title: 'Pembayaran menunggu verifikasi',

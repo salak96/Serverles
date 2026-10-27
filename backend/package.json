@@ -17,6 +17,7 @@
     "bootstrap:admin": "tsx scripts/bootstrap-admin.ts",
     "test:telegram": "tsx scripts/test-telegram.ts",
     "test:smtp": "tsx scripts/test-smtp.ts",
+    "test:order-flow": "tsx scripts/test-order-flow.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "test": "vitest run",
     "test:watch": "vitest"
