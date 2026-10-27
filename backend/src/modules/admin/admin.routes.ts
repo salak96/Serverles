@@ -425,8 +425,18 @@ router.get(
   '/orders',
   asyncHandler(async (req, res) => {
     const status = (req.query.status as string | undefined) ?? undefined;
+    const search = (req.query.search as string | undefined)?.trim();
+    const where: Record<string, unknown> = {};
+    if (status) where['status'] = status;
+    if (search) {
+      where['OR'] = [
+        { id: { contains: search } },
+        { user: { name: { contains: search } } },
+        { user: { email: { contains: search } } },
+      ];
+    }
     const orders = await prisma.order.findMany({
-      where: status ? { status: status as never } : undefined,
+      where,
       orderBy: { createdAt: 'desc' },
       include: { user: { select: { id: true, name: true, email: true } }, plan: { select: { id: true, name: true, slug: true } } },
     });

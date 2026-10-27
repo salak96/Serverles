@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Search } from 'lucide-react';
 import { api, HttpError } from '@/lib/api';
 import { Card, Badge, Skeleton, EmptyState, ConfirmDialog } from '@/components/ui';
 import { formatRupiah, formatJakarta } from '@/lib/format';
@@ -22,13 +23,21 @@ interface AdminOrder {
 export function AdminOrdersPage() {
   const qc = useQueryClient();
   const [status, setStatus] = useState<'ALL' | AdminOrder['status']>('PENDING');
+  const [search, setSearch] = useState('');
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [error, setError] = useState('');
+
   const list = useQuery({
-    queryKey: ['admin', 'orders', status],
-    queryFn: () => api<AdminOrder[]>('/admin/orders', { query: { status: status === 'ALL' ? undefined : status } }),
+    queryKey: ['admin', 'orders', status, search],
+    queryFn: () => api<AdminOrder[]>('/admin/orders', {
+      query: {
+        status: status === 'ALL' ? undefined : status,
+        search: search.trim() || undefined,
+      },
+    }),
   });
+
   const confirm = useMutation({
     mutationFn: (id: string) => api(`/admin/orders/${id}/confirm`, { method: 'POST' }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin', 'orders'] }); setConfirmId(null); setError(''); },
@@ -41,18 +50,40 @@ export function AdminOrdersPage() {
   });
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h2 className="text-xl font-semibold">Verifikasi Pembayaran</h2><p className="text-sm text-ink-muted">Order PENDING menunggu verifikasi manual admin.</p></div>
-        <select className="input max-w-[180px]" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-          <option value="ALL">Semua</option>
-          <option value="PENDING">PENDING</option>
-          <option value="PAID">PAID</option>
-          <option value="FAILED">FAILED</option>
-          <option value="EXPIRED">EXPIRED</option>
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold">Verifikasi Pembayaran</h2>
+          <p className="text-sm text-ink-muted">Order PENDING menunggu verifikasi manual admin.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-muted" />
+            <input
+              type="text"
+              className="input pl-9 h-10 text-sm"
+              placeholder="Cari nama, email, ID order..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select className="input max-w-[150px] h-10 text-sm" value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
+            <option value="ALL">Semua Status</option>
+            <option value="PENDING">PENDING</option>
+            <option value="PAID">PAID</option>
+            <option value="FAILED">FAILED</option>
+            <option value="EXPIRED">EXPIRED</option>
+          </select>
+        </div>
       </div>
       {error && <div className="text-sm text-danger bg-danger/10 border border-danger/30 rounded-lg px-3 py-2">{error}</div>}
-      {list.isLoading ? <Skeleton className="h-40" /> : !list.data?.length ? <EmptyState title="Tidak ada order" message="Belum ada order pada filter ini." /> : (
+      {list.isLoading ? (
+        <Skeleton className="h-40" />
+      ) : !list.data?.length ? (
+        <EmptyState
+          title="Tidak ada order"
+          message={search.trim() ? `Tidak ditemukan order yang cocok dengan "${search}".` : 'Belum ada order pada filter ini.'}
+        />
+      ) : (
         <Card className="!p-0 overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-bg-sidebar border-b border-line">
