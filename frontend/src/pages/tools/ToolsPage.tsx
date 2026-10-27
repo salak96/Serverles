@@ -73,30 +73,16 @@ export function ToolsPage() {
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-120px)] bg-[#0B0B0B] text-white p-4 sm:p-6 lg:p-8 rounded-2xl overflow-hidden">
-      {/* Subtle modern background grid pattern */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.04]"
-        style={{
-          backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
-          backgroundSize: '36px 36px',
-        }}
-        aria-hidden="true"
-      />
-
-      {/* Decorative ambient radial glows */}
-      <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-gradient-to-b from-[#D4AF37]/10 via-[#FF8A00]/5 to-transparent blur-3xl rounded-full" aria-hidden="true" />
-
-      <div className="relative z-10 space-y-8">
-        {/* Page Header */}
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-            Daftar Bot & Tools
-          </h1>
-          <p className="mt-2 text-sm sm:text-base text-[#94A3B8] max-w-3xl leading-relaxed">
-            Semua bot otomatis terintegrasi langsung dengan gateway lisensi API PawangTools dan proteksi HWID.
-          </p>
-        </div>
+    <div className="space-y-8">
+      {/* Page Header */}
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+          Daftar Bot & Tools
+        </h1>
+        <p className="mt-2 text-sm sm:text-base text-[#94A3B8] max-w-3xl leading-relaxed">
+          Semua bot otomatis terintegrasi langsung dengan gateway lisensi API PawangTools dan proteksi HWID.
+        </p>
+      </div>
 
         {/* LOADING STATE */}
         {licensesQuery.isLoading ? (
@@ -311,7 +297,6 @@ export function ToolsPage() {
             )}
           </div>
         )}
-      </div>
 
       {/* Tool Detail Modal */}
       <PolicyModal

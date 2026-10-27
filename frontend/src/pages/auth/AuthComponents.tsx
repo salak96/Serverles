@@ -18,8 +18,22 @@ export function BrandLogo() {
 
 export function AuthShell({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <main className="min-h-screen min-h-[100dvh] bg-bg flex flex-col items-center justify-center px-4 py-8 sm:py-12">
-      <div className="w-full max-w-[440px]">
+    <main className="relative min-h-screen min-h-[100dvh] bg-[#0B0B0B] text-ink flex flex-col items-center justify-center px-4 py-8 sm:py-12 overflow-hidden">
+      {/* Subtle modern background grid pattern */}
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.035]"
+        style={{
+          backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
+          backgroundSize: '36px 36px',
+        }}
+        aria-hidden="true"
+      />
+      {/* Decorative ambient radial glow */}
+      <div
+        className="pointer-events-none fixed -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[350px] bg-gradient-to-b from-[#D4AF37]/10 via-[#FF8A00]/5 to-transparent blur-3xl rounded-full"
+        aria-hidden="true"
+      />
+      <div className="relative z-10 w-full max-w-[440px]">
         <header className="mb-7">
           <BrandLogo />
         </header>

@@ -4,8 +4,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        bg: { DEFAULT: '#0B0D12', sidebar: '#10131A', card: '#151922' },
-        line: { DEFAULT: '#2A303C' },
+        bg: { DEFAULT: '#0B0B0B', sidebar: '#0E1118', card: '#12141A' },
+        line: { DEFAULT: '#272C36' },
         accent: { DEFAULT: '#FF8A00', hover: '#FFA126' },
         ink: { DEFAULT: '#F8FAFC', muted: '#94A3B8' },
         success: '#10B981',

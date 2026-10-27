@@ -139,8 +139,24 @@ export function DashboardLayout() {
       )}
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-line bg-bg-sidebar flex items-center px-4 lg:px-6 gap-4 shrink-0">
+      <div className="relative flex-1 flex flex-col min-w-0 bg-[#0B0B0B]">
+        {/* Subtle modern background grid pattern */}
+        <div
+          className="pointer-events-none fixed inset-0 opacity-[0.035]"
+          style={{
+            backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
+            backgroundSize: '36px 36px',
+          }}
+          aria-hidden="true"
+        />
+
+        {/* Decorative ambient radial glow */}
+        <div
+          className="pointer-events-none fixed -top-40 right-1/4 w-[600px] h-[350px] bg-gradient-to-b from-[#D4AF37]/10 via-[#FF8A00]/5 to-transparent blur-3xl rounded-full"
+          aria-hidden="true"
+        />
+
+        <header className="relative z-10 h-16 border-b border-line bg-bg-sidebar/95 backdrop-blur-sm flex items-center px-4 lg:px-6 gap-4 shrink-0">
           <button className="lg:hidden btn btn-ghost p-2" onClick={() => setDrawerOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
@@ -163,7 +179,7 @@ export function DashboardLayout() {
           </button>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 lg:px-6 py-6">
+        <main className="relative z-10 flex-1 overflow-y-auto px-4 lg:px-6 py-6">
           <Outlet />
         </main>
       </div>
