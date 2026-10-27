@@ -49,6 +49,23 @@ function maskEmail(email: string): string {
   return `${visible}${'*'.repeat(Math.max(3, localPart.length - visible.length))}@${domain}`;
 }
 
+export function maskLicenseKeyForTelegram(key: string): string {
+  const parts = key.split('-');
+  if (parts.length >= 4) {
+    const head = parts.slice(0, 2).join('-');
+    const tail = parts[parts.length - 1];
+    const middle = parts.slice(2, -1).map(() => '****').join('-');
+    return `${head}-${middle}-${tail}`;
+  }
+  if (parts.length === 3) {
+    return `${parts[0]}-****-${parts[2]}`;
+  }
+  if (key.length <= 8) return key;
+  const start = key.slice(0, 4);
+  const end = key.slice(-4);
+  return `${start}-****-${end}`;
+}
+
 export async function notifyTelegramLicenseSecurityEvent(input: LicenseSecurityAlertInput): Promise<void> {
   const { BOT_TOKEN, CHAT_ID } = env.TELEGRAM;
   if (!BOT_TOKEN || !CHAT_ID) return;
@@ -183,7 +200,7 @@ export async function notifyTelegramOrderVerified(input: VerifiedOrderAlertInput
     `Paket: ${input.planName}`,
     `Durasi: ${input.durationDays} hari`,
     `Total: ${input.amountFormatted}`,
-    ...(input.licenseKey ? [`🔑 License Key: ${input.licenseKey}`] : []),
+    ...(input.licenseKey ? [`🔑 License Key: ${maskLicenseKeyForTelegram(input.licenseKey)}`] : []),
     `Waktu verifikasi: ${input.verifiedAt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })}`,
   ].join('\n');
 
