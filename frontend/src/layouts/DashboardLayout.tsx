@@ -69,10 +69,13 @@ export function DashboardLayout() {
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Persistent sidebar collapsed state in localStorage
+  const storageKey = user?.role === 'ADMIN' ? 'pawang_admin_sidebar_collapsed' : 'pawang_user_sidebar_collapsed';
+
+  // Persistent sidebar collapsed state in localStorage (separate for admin & user)
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('pawang_sidebar_collapsed') === 'true';
+      const key = user?.role === 'ADMIN' ? 'pawang_admin_sidebar_collapsed' : 'pawang_user_sidebar_collapsed';
+      return localStorage.getItem(key) === 'true';
     } catch {
       return false;
     }
@@ -80,11 +83,11 @@ export function DashboardLayout() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('pawang_sidebar_collapsed', String(collapsed));
+      localStorage.setItem(storageKey, String(collapsed));
     } catch {
       // ignore
     }
-  }, [collapsed]);
+  }, [collapsed, storageKey]);
 
   const { data: notif } = useQuery({
     queryKey: ['notifications', 'unread'],
