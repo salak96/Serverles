@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   Package,
   Settings,
+  BarChart3,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -25,11 +26,13 @@ interface DashboardData {
   totalUsers: number;
   verifiedUsers: number;
   activeSubscriptions: number;
+  totalLicenses: number;
   activeLicenses: number;
   expiredLicenses: number;
   activeDevices: number;
   pendingDeviceResets: number;
   totalTools: number;
+  totalOrders: number;
   pendingPayments: number;
   monthlyRevenue: number;
   recentActivity: Array<{
@@ -71,6 +74,16 @@ export function AdminDashboardPage() {
     queryFn: () => api<HealthData>('/health'),
     refetchInterval: 30_000,
   });
+
+  // Accurate metric values for the Ringkasan Sistem Bar Chart
+  const userCount = dash.data?.totalUsers ?? 0;
+  const licenseCount = dash.data?.totalLicenses ?? 0;
+  const paymentCount = dash.data?.totalOrders ?? 0;
+  const chartMax = Math.max(userCount, licenseCount, paymentCount, 1);
+
+  const userBarPercent = Math.max(Math.round((userCount / chartMax) * 100), userCount > 0 ? 8 : 2);
+  const licenseBarPercent = Math.max(Math.round((licenseCount / chartMax) * 100), licenseCount > 0 ? 8 : 2);
+  const paymentBarPercent = Math.max(Math.round((paymentCount / chartMax) * 100), paymentCount > 0 ? 8 : 2);
 
   return (
     <div className="space-y-6">
@@ -271,17 +284,103 @@ export function AdminDashboardPage() {
         </div>
 
         {/* =======================================================================
-            SIDE COLUMN: SYSTEM STATUS & QUICK ACTIONS (col-span-4)
+            SIDE COLUMN: RINGKASAN SISTEM (GRAFIK STATISTIK), STATUS, & AKSES CEPAT
         ======================================================================== */}
         <div className="lg:col-span-4 space-y-6">
-          {/* Status Server & Integrasi */}
+          {/* =====================================================================
+              CARD: RINGKASAN SISTEM — GRAFIK STATISTIK BATANG
+          ====================================================================== */}
+          <div className="bg-[#12151B] border border-[#292D35] rounded-2xl p-5 shadow-sm space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-[#292D35]">
+              <div>
+                <h3 className="font-bold text-white text-base flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-[#FF8A00]" />
+                  <span>Ringkasan Sistem</span>
+                </h3>
+                <p className="text-xs text-[#A7B0C0] mt-0.5">Grafik statistik data platform</p>
+              </div>
+              <span className="text-[10px] font-bold text-[#FF8A00] bg-[#FF8A00]/10 border border-[#FF8A00]/30 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                AKUMULATIF
+              </span>
+            </div>
+
+            {dash.isLoading ? (
+              <div className="h-44 flex items-center justify-center">
+                <Skeleton className="h-36 w-full rounded-xl" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* 3 Vertical Bars Container */}
+                <div className="h-40 bg-[#0D1118] border border-[#292D35] rounded-xl p-4 flex items-end justify-around gap-3 pt-6">
+                  {/* Category 1: Pengguna */}
+                  <div className="flex-1 flex flex-col items-center h-full justify-end group">
+                    <span className="text-xs font-bold text-white mb-1.5 group-hover:text-[#FFA500] transition-colors">
+                      {userCount.toLocaleString('id-ID')}
+                    </span>
+                    <div className="w-full max-w-[48px] bg-[#171B24] rounded-t-lg h-full flex items-end p-0.5">
+                      <div
+                        style={{ height: `${userBarPercent}%` }}
+                        className="w-full bg-gradient-to-t from-[#FF8A00] to-[#FFA500] rounded-t-md shadow-[0_0_12px_rgba(255,138,0,0.35)] transition-all duration-700"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Category 2: Lisensi */}
+                  <div className="flex-1 flex flex-col items-center h-full justify-end group">
+                    <span className="text-xs font-bold text-white mb-1.5 group-hover:text-[#FFA500] transition-colors">
+                      {licenseCount.toLocaleString('id-ID')}
+                    </span>
+                    <div className="w-full max-w-[48px] bg-[#171B24] rounded-t-lg h-full flex items-end p-0.5">
+                      <div
+                        style={{ height: `${licenseBarPercent}%` }}
+                        className="w-full bg-gradient-to-t from-[#FF8A00] to-[#FFA500] rounded-t-md shadow-[0_0_12px_rgba(255,138,0,0.35)] transition-all duration-700"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Category 3: Pembayaran */}
+                  <div className="flex-1 flex flex-col items-center h-full justify-end group">
+                    <span className="text-xs font-bold text-white mb-1.5 group-hover:text-[#FFA500] transition-colors">
+                      {paymentCount.toLocaleString('id-ID')}
+                    </span>
+                    <div className="w-full max-w-[48px] bg-[#171B24] rounded-t-lg h-full flex items-end p-0.5">
+                      <div
+                        style={{ height: `${paymentBarPercent}%` }}
+                        className="w-full bg-gradient-to-t from-[#FF8A00] to-[#FFA500] rounded-t-md shadow-[0_0_12px_rgba(255,138,0,0.35)] transition-all duration-700"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category Labels Below Bars */}
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="p-2 rounded-lg bg-[#0D1118]/80 border border-[#292D35]/80">
+                    <div className="font-bold text-white text-[11px] truncate">Pengguna</div>
+                    <div className="text-[10px] text-[#A7B0C0] truncate">Total Akun</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-[#0D1118]/80 border border-[#292D35]/80">
+                    <div className="font-bold text-white text-[11px] truncate">Lisensi</div>
+                    <div className="text-[10px] text-[#A7B0C0] truncate">Total Diterbitkan</div>
+                  </div>
+                  <div className="p-2 rounded-lg bg-[#0D1118]/80 border border-[#292D35]/80">
+                    <div className="font-bold text-white text-[11px] truncate">Pembayaran</div>
+                    <div className="text-[10px] text-[#A7B0C0] truncate">Total Transaksi</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* =====================================================================
+              CARD: STATUS SISTEM & SERVER
+          ====================================================================== */}
           <div className="bg-[#12151B] border border-[#292D35] rounded-2xl p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#292D35]">
               <h3 className="font-bold text-white text-base flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-[#FF8A00]" />
                 <span>Status Sistem</span>
               </h3>
-              <span className="text-[11px] text-[#A7B0C0]">Real-time</span>
+              <span className="text-[11px] text-[#A7B0C0]">Infrastruktur</span>
             </div>
 
             {health.isLoading ? (
@@ -370,7 +469,9 @@ export function AdminDashboardPage() {
             )}
           </div>
 
-          {/* Akses Cepat Navigasi Admin */}
+          {/* =====================================================================
+              CARD: AKSES CEPAT ADMIN
+          ====================================================================== */}
           <div className="bg-[#12151B] border border-[#292D35] rounded-2xl p-5 shadow-sm space-y-3">
             <h3 className="font-bold text-white text-base">Akses Cepat Admin</h3>
             <div className="grid grid-cols-2 gap-2 text-xs">
@@ -393,7 +494,7 @@ export function AdminDashboardPage() {
                 className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-[#0D1118] border border-[#292D35] text-[#F5F5F5] hover:border-[#FF8A00]/50 hover:text-[#FFA500] transition-colors"
               >
                 <CreditCard className="w-4 h-4 text-[#F59E0B]" />
-                <span className="truncate">Verifikasi</span>
+                <span className="truncate">Payment Verif.</span>
               </Link>
               <Link
                 to="/admin/plans"
