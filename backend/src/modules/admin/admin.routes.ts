@@ -56,6 +56,7 @@ router.get(
   '/dashboard',
   asyncHandler(async (_req, res) => {
     const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const [
       totalUsers,
       verifiedUsers,
@@ -65,6 +66,8 @@ router.get(
       activeDevices,
       pendingResets,
       totalTools,
+      pendingPayments,
+      monthlyRevenueAgg,
       recentActivity,
     ] = await Promise.all([
       prisma.user.count(),
@@ -75,7 +78,24 @@ router.get(
       prisma.device.count({ where: { status: 'ACTIVE' } }),
       prisma.deviceReset.count({ where: { status: 'PENDING' } }),
       prisma.tool.count(),
-      prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, action: true, entityType: true, result: true, createdAt: true, actorUserId: true } }),
+      prisma.order.count({ where: { status: 'PENDING' } }),
+      prisma.order.aggregate({
+        _sum: { amount: true },
+        where: { status: 'PAID', paidAt: { gte: startOfMonth } },
+      }),
+      prisma.auditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          action: true,
+          entityType: true,
+          result: true,
+          createdAt: true,
+          actorUserId: true,
+          actor: { select: { id: true, name: true, email: true } },
+        },
+      }),
     ]);
     res.json({
       success: true,
@@ -88,6 +108,8 @@ router.get(
         activeDevices,
         pendingDeviceResets: pendingResets,
         totalTools,
+        pendingPayments,
+        monthlyRevenue: Number(monthlyRevenueAgg._sum.amount ?? 0),
         recentActivity: recentActivity.map((a) => ({ ...a, createdAt: formatJakarta(a.createdAt) })),
         generatedAt: formatJakarta(now),
       },
