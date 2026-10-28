@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { useEffect } from 'react';
+import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
 import { VerifyEmailPage } from './pages/auth/VerifyEmailPage';
@@ -80,7 +81,7 @@ export function App() {
     <>
       <SecurityWatcher />
       <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<LandingPage />} />
 
       {/* Auth */}
       <Route path="/auth/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
