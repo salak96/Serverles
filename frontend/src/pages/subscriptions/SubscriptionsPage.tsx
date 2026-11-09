@@ -196,7 +196,10 @@ function PaymentModal({ order, secondsLeft, onClose }: { order: OrderPreview; se
 }
 
 function PlanCard({ plan, onSelect, selected }: { plan: Plan; onSelect: (d: number) => void; selected: { planId: string; durationDays: number } | null }) {
-  const features = Array.isArray(plan.features) ? (plan.features as string[]) : [];
+  // Flag kapabilitas mesin (mis. 'tool-access') adalah izin untuk aplikasi
+  // desktop, bukan poin pemasaran — jangan tampilkan sebagai bullet paket.
+  const CAPABILITY_FLAGS = new Set(['tool-access']);
+  const features = (Array.isArray(plan.features) ? (plan.features as string[]) : []).filter((f) => !CAPABILITY_FLAGS.has(f));
   const isSelected = selected?.planId === plan.id;
   return (
     <Card className={`flex flex-col gap-3 ${isSelected ? 'border-accent' : ''}`}>

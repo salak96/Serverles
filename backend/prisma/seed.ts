@@ -5,6 +5,16 @@
  *  - Tools: None (admin manages via /admin/tools)
  *
  * Re-running this seed is safe; existing records are upserted by slug/key.
+ *
+ * CATATAN FITUR: string 'tool-access' di dalam `features` adalah flag
+ * kapabilitas yang dibaca mesin — endpoint /api/v1/licenses/validate dan
+ * /activate-device mengembalikan plan.features apa adanya sebagai
+ * `allowed_features`, dan aplikasi desktop (License Guard) membuka tools
+ * hanya bila 'tool-access' ada di daftar itu. Jangan hapus flag ini dari
+ * paket berbayar (Basic, Pro, Premium); paket Free sengaja tidak memilikinya.
+ * Panel admin wajib mengirim kembali daftar features yang sudah ada saat
+ * menyimpan paket (jangan menimpa dengan []), kalau tidak flag ini hilang
+ * dan semua lisensi paket itu terkunci dari tools.
  */
 import { PrismaClient, Prisma } from '@prisma/client';
 
@@ -36,7 +46,7 @@ const PLANS = [
     price: new Prisma.Decimal(49000),
     durationDays: 30,
     maxDevices: 1,
-    features: ['1 perangkat aktif', 'Akses tools standar', 'Update otomatis'],
+    features: ['1 perangkat aktif', 'Akses tools standar', 'Update otomatis', 'tool-access'],
     resetPolicy: {
       maxResets: 2,
       periodDays: 30,
@@ -64,6 +74,7 @@ const PLANS = [
       'Akses semua tools utama',
       'Update otomatis',
       'Dukungan prioritas',
+      'tool-access',
     ],
     resetPolicy: {
       maxResets: 3,
@@ -92,6 +103,7 @@ const PLANS = [
       'Akses penuh semua tools',
       'Akses awal fitur beta',
       'Dukungan prioritas 24/7',
+      'tool-access',
     ],
     resetPolicy: {
       maxResets: 5,
