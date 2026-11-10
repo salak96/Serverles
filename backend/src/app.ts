@@ -33,6 +33,12 @@ export function createApp(): Application {
       origin(origin, callback) {
         if (!origin) return callback(null, true);
         if (allowedOrigins.has(origin)) return callback(null, true);
+        // Chrome extension (Pawang Konten) memanggil API lisensi publik
+        // langsung; Origin-nya chrome-extension://<id>. Izinkan, karena
+        // endpoint lisensi diautentikasi oleh license key di body, bukan
+        // oleh cookie/Origin — dan cookie sesi (SameSite=Lax) tidak
+        // terkirim pada fetch lintas origin.
+        if (origin.startsWith('chrome-extension://')) return callback(null, true);
         return callback(new Error(`Origin ${origin} not allowed by CORS`));
       },
       credentials: true,
